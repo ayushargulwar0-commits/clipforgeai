@@ -182,14 +182,14 @@ class VideoProcessor:
                 r"drawtext=font='Arial':text='CLIPFORGE AI':fontcolor=0x8b5cf6:fontsize=56:x=(w-text_w)/2:y=(h/2)-120,"
                 r"drawtext=font='Arial':text='This video cut\, short and AI edited by':fontcolor=white:fontsize=30:x=(w-text_w)/2:y=(h/2)-40,"
                 r"drawtext=font='Arial':text='ClipForge AI':fontcolor=0x38bdf8:fontsize=46:x=(w-text_w)/2:y=(h/2)+20,"
-                r"drawtext=font='Arial':text='Visit website now — Free for all!':fontcolor=0xfacc15:fontsize=30:x=(w-text_w)/2:y=(h/2)+90"
+                r"drawtext=font='Arial':text='Visit clipforgeai.online — Free for all!':fontcolor=0xfacc15:fontsize=30:x=(w-text_w)/2:y=(h/2)+90"
             )
         elif aspect_ratio == "1:1":
             vf = (
                 r"drawtext=font='Arial':text='CLIPFORGE AI':fontcolor=0x8b5cf6:fontsize=54:x=(w-text_w)/2:y=(h/2)-120,"
                 r"drawtext=font='Arial':text='This video cut\, short and AI edited by':fontcolor=white:fontsize=32:x=(w-text_w)/2:y=(h/2)-40,"
                 r"drawtext=font='Arial':text='ClipForge AI':fontcolor=0x38bdf8:fontsize=46:x=(w-text_w)/2:y=(h/2)+20,"
-                r"drawtext=font='Arial':text='Visit website now — Free for all!':fontcolor=0xfacc15:fontsize=28:x=(w-text_w)/2:y=(h/2)+90"
+                r"drawtext=font='Arial':text='Visit clipforgeai.online — Free for all!':fontcolor=0xfacc15:fontsize=28:x=(w-text_w)/2:y=(h/2)+90"
             )
         else:
             # 9:16 vertical
@@ -197,7 +197,7 @@ class VideoProcessor:
                 r"drawtext=font='Arial':text='CLIPFORGE AI':fontcolor=0x8b5cf6:fontsize=64:x=(w-text_w)/2:y=(h/2)-180,"
                 r"drawtext=font='Arial':text='This video cut\, short and AI edited by':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=(h/2)-70,"
                 r"drawtext=font='Arial':text='ClipForge AI':fontcolor=0x38bdf8:fontsize=52:x=(w-text_w)/2:y=(h/2)+5,"
-                r"drawtext=font='Arial':text='Visit website now — Free for all!':fontcolor=0xfacc15:fontsize=34:x=(w-text_w)/2:y=(h/2)+110"
+                r"drawtext=font='Arial':text='Visit clipforgeai.online — Free for all!':fontcolor=0xfacc15:fontsize=34:x=(w-text_w)/2:y=(h/2)+110"
             )
 
         cmd = [
