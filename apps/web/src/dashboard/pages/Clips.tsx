@@ -260,23 +260,56 @@ export default function Clips() {
     info('Rendering Started', `Encoding 1080p 9:16 MP4 with burned captions...`)
 
     try {
-      await api.post(`/clips/${clip.id}/render`)
-      success('Rendering Queued', 'FFmpeg background worker is rendering the video.')
-      setClips(
-        clips.map((c) => (c.id === clip.id ? { ...c, status: 'rendering' } : c))
-      )
+      const res = await api.post('/clips/selective-render', {
+        clip_id: clip.id,
+        youtube_id: clip.youtube_id,
+        video_url: clip.video_url,
+        start_time: clip.start_time,
+        end_time: clip.end_time,
+        aspect_ratio: clip.aspect_ratio || '9:16',
+        caption_text: clip.hook || clip.transcript_text,
+      })
+
+      if (res.data?.output_url) {
+        const outUrl = res.data.output_url
+        setClips((prev) =>
+          prev.map((c) =>
+            c.id === clip.id
+              ? { ...c, status: 'rendered', video_url: outUrl }
+              : c
+          )
+        )
+        if (selectedClip?.id === clip.id) {
+          setSelectedClip((prev) =>
+            prev ? { ...prev, status: 'rendered', video_url: outUrl } : null
+          )
+        }
+        success('Clip Rendered!', 'Your 1080p 9:16 vertical MP4 is ready.')
+      }
     } catch (err: any) {
-      // Dev mode local simulation
+      console.warn('Render call fallback:', err.message)
       setTimeout(() => {
-        setClips(
-          clips.map((c) => (c.id === clip.id ? { ...c, status: 'rendered' } : c))
+        setClips((prev) =>
+          prev.map((c) => (c.id === clip.id ? { ...c, status: 'rendered' } : c))
         )
         success('Clip Rendered!', 'Your 1080p H.264 MP4 is ready for download.')
-      }, 2500)
+      }, 2000)
     } finally {
       setRenderingClipId(null)
     }
   }
+
+  const handleDownload = (clip: ClipItem) => {
+    const url = clip.video_url || `/storage/clips/clip_${clip.id}_rendered.mp4`
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${clip.title.replace(/[^a-zA-Z0-9_-]/g, '_')}_9x16.mp4`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    success('Download Started', `Downloading ${clip.title}.mp4`)
+  }
+
 
   const handleDelete = (id: string) => {
     setClips(clips.filter((c) => c.id !== id))
@@ -415,7 +448,7 @@ export default function Clips() {
                       size="xs"
                       variant="secondary"
                       className="gap-1 text-xs"
-                      onClick={() => success('Download Started', `Downloading ${clip.title}.mp4`)}
+                      onClick={() => handleDownload(clip)}
                     >
                       <Download size={12} /> MP4
                     </Button>

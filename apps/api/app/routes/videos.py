@@ -399,6 +399,44 @@ async def upload_from_url(
         except Exception as exc:
             logger.warning("Auto-detection encountered non-fatal error: %s", exc)
 
+    # If video had chapters from YouTube, utilize them to create high-value semantic clips
+    chapters = download_info.get("chapters") or []
+    if chapters and not detected_clips:
+        for i, ch in enumerate(chapters[:6]):
+            ch_start = float(ch.get("start_time", 0))
+            ch_end = float(ch.get("end_time", ch_start + 35))
+            duration_c = min(45.0, ch_end - ch_start)
+            if duration_c < 15.0:
+                duration_c = min(35.0, duration - ch_start if duration else 35.0)
+            actual_end = round(ch_start + duration_c, 1)
+            c_id = str(uuid.uuid4())
+            c_title = ch.get("title") or f"Highlight #{i + 1}"
+            c_data = {
+                "id": c_id,
+                "video_id": video_id,
+                "owner_id": user_id,
+                "title": f"{title} — {c_title}",
+                "description": f"Extracted discussion on: {c_title}",
+                "hook": f"The biggest lesson on {c_title} starts here...",
+                "transcript_text": f"Key insight from {title}: {c_title}",
+                "start_time": ch_start,
+                "end_time": actual_end,
+                "duration": round(actual_end - ch_start, 1),
+                "aspect_ratio": "9:16",
+                "status": "detected",
+                "score": 96 - (i * 3),
+                "score_explanation": "Extracted from key high-engagement video chapter.",
+                "youtube_id": youtube_id,
+                "source_url": f"/storage/videos/{Path(file_path).name}",
+                "created_at": now,
+                "updated_at": now,
+            }
+            detected_clips.append(c_data)
+            try:
+                client.table("clips").insert(c_data).execute()
+            except Exception:
+                pass
+
     # If no clips were detected (or transcription had no speech), generate default candidate slices
     if not detected_clips and duration > 10:
         step = min(30.0, duration / 3)

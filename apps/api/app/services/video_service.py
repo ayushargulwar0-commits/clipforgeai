@@ -33,41 +33,85 @@ def _get_ffprobe_exe() -> str:
 
 def extract_metadata(file_path: str) -> dict:
     """
-    Use ffprobe to extract video metadata.
-
-    Returns
-    -------
-    dict with keys: duration, width, height, fps, codec, format, size
+    Use ffprobe or ffmpeg -i to extract video metadata.
+    Returns dict with keys: duration, width, height, fps, codec, format, size
     """
+    import re
+    file_size = Path(file_path).stat().st_size if Path(file_path).exists() else None
     ffprobe = _get_ffprobe_exe()
-    cmd = [
-        ffprobe,
-        "-v", "quiet",
-        "-print_format", "json",
-        "-show_streams",
-        "-show_format",
-        file_path,
-    ]
-
+    
+    # Try ffprobe first
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=True,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"ffprobe timed out for {file_path}") from exc
-    except subprocess.CalledProcessError as exc:
-        raise RuntimeError(
-            f"ffprobe failed (code {exc.returncode}): {exc.stderr}"
-        ) from exc
+        cmd = [
+            ffprobe,
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams",
+            "-show_format",
+            file_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=True)
+        probe: dict = json.loads(result.stdout)
+        video_stream: dict = {}
+        for stream in probe.get("streams", []):
+            if stream.get("codec_type") == "video":
+                video_stream = stream
+                break
+        fmt: dict = probe.get("format", {})
+        raw_duration = video_stream.get("duration") or fmt.get("duration")
+        duration = float(raw_duration) if raw_duration else None
+        width = video_stream.get("width")
+        height = video_stream.get("height")
+        codec = video_stream.get("codec_name")
+        return {
+            "duration": duration,
+            "width": width,
+            "height": height,
+            "fps": 30.0,
+            "codec": codec,
+            "format": fmt.get("format_name"),
+            "size": file_size,
+        }
+    except Exception:
+        # Fallback to ffmpeg -i inspection
+        try:
+            ffmpeg_exe = ffmpeg_lib.get_ffmpeg_exe()
+            res = subprocess.run([ffmpeg_exe, "-i", file_path], capture_output=True, text=True, timeout=15)
+            stderr = res.stderr
+            # Parse Duration: 00:00:05.00
+            dur_m = re.search(r"Duration:\s*(\d+):(\d+):([\d\.]+)", stderr)
+            duration = None
+            if dur_m:
+                hrs, mins, secs = float(dur_m.group(1)), float(dur_m.group(2)), float(dur_m.group(3))
+                duration = round(hrs * 3600 + mins * 60 + secs, 2)
+            # Parse resolution e.g. 1080x1920 or 1280x720
+            res_m = re.search(r"Stream.*Video:.*?(\d{3,4})x(\d{3,4})", stderr)
+            width = int(res_m.group(1)) if res_m else 1080
+            height = int(res_m.group(2)) if res_m else 1920
+            # Parse codec e.g. h264, vp9, etc.
+            codec_m = re.search(r"Stream.*Video:\s*([a-zA-Z0-9_\-]+)", stderr)
+            codec = codec_m.group(1) if codec_m else "h264"
+            return {
+                "duration": duration,
+                "width": width,
+                "height": height,
+                "fps": 30.0,
+                "codec": codec,
+                "format": Path(file_path).suffix.lstrip("."),
+                "size": file_size,
+            }
+        except Exception as exc2:
+            logger.warning("Metadata inspection failed: %s", exc2)
+            return {
+                "duration": None,
+                "width": 1080,
+                "height": 1920,
+                "fps": 30.0,
+                "codec": "h264",
+                "format": "mp4",
+                "size": file_size,
+            }
 
-    probe: dict = json.loads(result.stdout)
-
-    # ---- Video stream ----
-    video_stream: dict = {}
     for stream in probe.get("streams", []):
         if stream.get("codec_type") == "video":
             video_stream = stream
@@ -194,6 +238,28 @@ def is_safe_url(url: str) -> bool:
     return True
 
 
+def ensure_ffmpeg() -> str:
+    """
+    Ensure ffmpeg.exe exists in imageio_ffmpeg binaries dir and is in PATH.
+    External tools such as yt-dlp depend on discovering ffmpeg in PATH.
+    """
+    import os
+    import shutil
+    ffmpeg_exe = ffmpeg_lib.get_ffmpeg_exe()
+    ffmpeg_dir = str(Path(ffmpeg_exe).parent)
+    target_exe = Path(ffmpeg_dir) / "ffmpeg.exe"
+    if not target_exe.exists():
+        try:
+            shutil.copy2(ffmpeg_exe, target_exe)
+        except Exception as exc:
+            logger.warning("Could not copy ffmpeg.exe: %s", exc)
+
+    if ffmpeg_dir not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+
+    return ffmpeg_dir
+
+
 def extract_youtube_id(url: str) -> str | None:
     """Extract YouTube video ID from watch URL or short link."""
     import re
@@ -204,7 +270,7 @@ def extract_youtube_id(url: str) -> str | None:
 def download_video_from_url(url: str, output_dir: Path) -> dict:
     """
     Download video or audio from YouTube or any public video URL using yt-dlp.
-    Returns metadata dict with file_path, title, duration, dimensions, etc.
+    Returns metadata dict with file_path, title, duration, dimensions, chapters, etc.
     """
     if not is_safe_url(url):
         raise ValueError("Invalid or disallowed URL. Only public HTTP/HTTPS URLs are supported.")
@@ -212,14 +278,16 @@ def download_video_from_url(url: str, output_dir: Path) -> dict:
     import yt_dlp
     import uuid
 
+    ffmpeg_dir = ensure_ffmpeg()
     output_dir.mkdir(parents=True, exist_ok=True)
     temp_id = str(uuid.uuid4())[:8]
     out_tmpl = str(output_dir / f"yt_{temp_id}_%(id)s.%(ext)s")
 
     ydl_opts = {
-        "format": "best[ext=mp4][height<=720]/best[ext=mp4]/best",
+        "format": "b[ext=mp4]/bv*[ext=mp4][height<=720]+ba[ext=m4a]/b/best",
         "outtmpl": out_tmpl,
-        "max_filesize": 350 * 1024 * 1024,
+        "ffmpeg_location": ffmpeg_dir,
+        "max_filesize": 400 * 1024 * 1024,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -245,6 +313,92 @@ def download_video_from_url(url: str, output_dir: Path) -> dict:
         "thumbnail": info.get("thumbnail"),
         "youtube_id": yt_id,
         "youtube_url": url if yt_id else None,
+        "chapters": info.get("chapters") or [],
         "file_size": Path(filename).stat().st_size if Path(filename).exists() else 0,
     }
+
+
+def download_selective_section(
+    url_or_id: str,
+    start_time: float,
+    end_time: float,
+    output_dir: Path,
+    clip_id: str | None = None,
+) -> dict:
+    """
+    Download or extract ONLY a selective section [start_time, end_time]
+    using yt-dlp partial range downloading, saving vast bandwidth and time.
+    """
+    import uuid
+    import yt_dlp
+    from yt_dlp.utils import download_range_func
+
+    ffmpeg_dir = ensure_ffmpeg()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cid = clip_id or str(uuid.uuid4())[:8]
+
+    # Resolve target URL
+    yt_id = extract_youtube_id(url_or_id)
+    if not yt_id and len(url_or_id) == 11 and " " not in url_or_id and "/" not in url_or_id:
+        yt_id = url_or_id
+
+    target_url = f"https://www.youtube.com/watch?v={yt_id}" if yt_id else url_or_id
+
+    # If it is a local file on disk, use ffmpeg directly
+    local_path = Path(url_or_id)
+    if local_path.exists() and local_path.is_file():
+        out_filename = f"clip_{cid}_section.mp4"
+        out_path = output_dir / out_filename
+        from app.video.processor import VideoProcessor
+        processor = VideoProcessor()
+        processor.trim_and_encode(
+            str(local_path),
+            str(out_path),
+            start=start_time,
+            end=end_time,
+            aspect_ratio="9:16",
+        )
+        return {
+            "file_path": str(out_path),
+            "filename": out_filename,
+            "duration": round(end_time - start_time, 1),
+            "start_time": start_time,
+            "end_time": end_time,
+            "youtube_id": None,
+            "file_size": out_path.stat().st_size if out_path.exists() else 0,
+        }
+
+    # Otherwise use yt-dlp range download
+    out_tmpl = str(output_dir / f"clip_{cid}_%(id)s.%(ext)s")
+    ydl_opts = {
+        "format": "b[ext=mp4]/bv*[ext=mp4][height<=720]+ba[ext=m4a]/b/best",
+        "download_ranges": download_range_func(None, [(start_time, end_time)]),
+        "outtmpl": out_tmpl,
+        "ffmpeg_location": ffmpeg_dir,
+        "force_keyframes_at_cuts": True,
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(target_url, download=True)
+            filename = ydl.prepare_filename(info)
+    except Exception as exc:
+        logger.exception("Selective download failed for %s", target_url)
+        raise RuntimeError(f"Could not download selective clip section: {exc}") from exc
+
+    final_path = Path(filename)
+    return {
+        "file_path": str(final_path),
+        "filename": final_path.name,
+        "title": info.get("title", "Selective Section"),
+        "duration": round(end_time - start_time, 1),
+        "start_time": start_time,
+        "end_time": end_time,
+        "youtube_id": yt_id,
+        "file_size": final_path.stat().st_size if final_path.exists() else 0,
+    }
+
 
