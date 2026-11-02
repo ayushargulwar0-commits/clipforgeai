@@ -1,0 +1,5 @@
+apps/api/
+.git
+.github
+docs/
+supabase/
