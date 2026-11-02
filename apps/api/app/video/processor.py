@@ -156,6 +156,117 @@ class VideoProcessor:
         self._run(cmd, timeout=600)
         logger.info("Subtitles burned into: %s", output_path)
 
+    def generate_outro(
+        self,
+        output_path: str,
+        duration: float = 2.5,
+        aspect_ratio: str = "9:16",
+    ) -> str:
+        """
+        Generate a branded ClipForge AI outro video card.
+        Includes glowing branding, 'Cut, short and AI edited by ClipForge AI'
+        and 'Visit website now — Free for all!' call to action.
+        """
+        ffmpeg = self.get_ffmpeg_exe()
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+        res_map = {
+            "9:16": "1080x1920",
+            "16:9": "1920x1080",
+            "1:1":  "1080x1080",
+        }
+        res = res_map.get(aspect_ratio, "1080x1920")
+
+        if aspect_ratio == "16:9":
+            vf = (
+                r"drawtext=font='Arial':text='CLIPFORGE AI':fontcolor=0x8b5cf6:fontsize=56:x=(w-text_w)/2:y=(h/2)-120,"
+                r"drawtext=font='Arial':text='This video cut\, short and AI edited by':fontcolor=white:fontsize=30:x=(w-text_w)/2:y=(h/2)-40,"
+                r"drawtext=font='Arial':text='ClipForge AI':fontcolor=0x38bdf8:fontsize=46:x=(w-text_w)/2:y=(h/2)+20,"
+                r"drawtext=font='Arial':text='Visit website now — Free for all!':fontcolor=0xfacc15:fontsize=30:x=(w-text_w)/2:y=(h/2)+90"
+            )
+        elif aspect_ratio == "1:1":
+            vf = (
+                r"drawtext=font='Arial':text='CLIPFORGE AI':fontcolor=0x8b5cf6:fontsize=54:x=(w-text_w)/2:y=(h/2)-120,"
+                r"drawtext=font='Arial':text='This video cut\, short and AI edited by':fontcolor=white:fontsize=32:x=(w-text_w)/2:y=(h/2)-40,"
+                r"drawtext=font='Arial':text='ClipForge AI':fontcolor=0x38bdf8:fontsize=46:x=(w-text_w)/2:y=(h/2)+20,"
+                r"drawtext=font='Arial':text='Visit website now — Free for all!':fontcolor=0xfacc15:fontsize=28:x=(w-text_w)/2:y=(h/2)+90"
+            )
+        else:
+            # 9:16 vertical
+            vf = (
+                r"drawtext=font='Arial':text='CLIPFORGE AI':fontcolor=0x8b5cf6:fontsize=64:x=(w-text_w)/2:y=(h/2)-180,"
+                r"drawtext=font='Arial':text='This video cut\, short and AI edited by':fontcolor=white:fontsize=36:x=(w-text_w)/2:y=(h/2)-70,"
+                r"drawtext=font='Arial':text='ClipForge AI':fontcolor=0x38bdf8:fontsize=52:x=(w-text_w)/2:y=(h/2)+5,"
+                r"drawtext=font='Arial':text='Visit website now — Free for all!':fontcolor=0xfacc15:fontsize=34:x=(w-text_w)/2:y=(h/2)+110"
+            )
+
+        cmd = [
+            ffmpeg, "-y",
+            "-f", "lavfi", "-i", f"color=c=0x0a0a0f:s={res}:d={duration}:r=25",
+            "-f", "lavfi", "-i", f"aevalsrc=0:d={duration}:s=44100",
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-ar", "44100", "-b:a", "128k",
+            "-t", str(duration),
+            output_path,
+        ]
+        self._run(cmd, timeout=60)
+        logger.info("Generated outro bumper: %s (ratio=%s)", output_path, aspect_ratio)
+        return output_path
+
+    def append_outro(
+        self,
+        main_video_path: str,
+        output_path: str,
+        aspect_ratio: str = "9:16",
+        duration: float = 2.5,
+    ) -> str:
+        """
+        Append the ClipForge AI outro bumper seamlessly to the end of main_video_path.
+        """
+        import uuid
+        ffmpeg = self.get_ffmpeg_exe()
+        parent_dir = Path(output_path).parent
+        parent_dir.mkdir(parents=True, exist_ok=True)
+
+        temp_id = str(uuid.uuid4())[:8]
+        outro_file = parent_dir / f"outro_temp_{temp_id}.mp4"
+        concat_list = parent_dir / f"concat_list_{temp_id}.txt"
+
+        try:
+            # 1. Generate outro clip
+            self.generate_outro(str(outro_file), duration=duration, aspect_ratio=aspect_ratio)
+
+            # 2. Write concat list
+            p1 = str(Path(main_video_path).resolve()).replace("\\", "/")
+            p2 = str(Path(outro_file).resolve()).replace("\\", "/")
+            with open(concat_list, "w", encoding="utf-8") as f:
+                f.write(f"file '{p1}'\nfile '{p2}'\n")
+
+            # 3. Concatenate using demuxer copy
+            cmd = [
+                ffmpeg, "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(concat_list),
+                "-c", "copy",
+                output_path,
+            ]
+            self._run(cmd, timeout=120)
+            logger.info("Appended outro to video: %s", output_path)
+            return output_path
+        finally:
+            if outro_file.exists():
+                try:
+                    outro_file.unlink()
+                except Exception:
+                    pass
+            if concat_list.exists():
+                try:
+                    concat_list.unlink()
+                except Exception:
+                    pass
+
     def generate_thumbnail(
         self,
         video_path: str,

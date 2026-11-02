@@ -268,7 +268,9 @@ export default function Clips() {
         end_time: clip.end_time,
         aspect_ratio: clip.aspect_ratio || '9:16',
         caption_text: clip.hook || clip.transcript_text,
+        include_outro: true,
       })
+
 
       if (res.data?.output_url) {
         const outUrl = res.data.output_url

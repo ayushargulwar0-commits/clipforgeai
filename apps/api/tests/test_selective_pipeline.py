@@ -16,3 +16,16 @@ def test_selective_render_pipeline():
     # Check that aspect filters exist and include 9:16 vertical
     assert "9:16" in processor._ASPECT_FILTERS
     assert "1080:1920" in processor._ASPECT_FILTERS["9:16"]
+
+
+def test_outro_generation():
+    processor = VideoProcessor()
+    test_out = Path("storage/clips/test_outro_unit.mp4")
+    try:
+        out_path = processor.generate_outro(str(test_out), duration=1.0, aspect_ratio="9:16")
+        assert Path(out_path).exists()
+        assert Path(out_path).stat().st_size > 1000
+    finally:
+        if test_out.exists():
+            test_out.unlink()
+

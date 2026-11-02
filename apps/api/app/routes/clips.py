@@ -428,6 +428,7 @@ class SelectiveRenderRequest(BaseModel):
     zoom: float = 1.0
     position_x: float = 0.0
     position_y: float = 0.0
+    include_outro: bool = True
 
 
 @router.post("/clips/selective-download", summary="Extract only the selective section MP4")
@@ -571,17 +572,32 @@ async def render_selective_section(req: SelectiveRenderRequest):
                 f.write(f"{idx + 1}\n{s_txt} --> {e_txt}\n{c}\n\n")
         srt_path = str(srt_file)
 
-    # Encode with aspect ratio and burned-in subtitles
+    # Encode with aspect ratio and burned-in subtitles, plus optional branded outro
+    temp_main = settings.storage_clips_dir / f"main_{clip_id}.mp4"
     try:
         processor = VideoProcessor()
         processor.trim_and_encode(
             input_path=input_video_path,
-            output_path=str(rendered_path),
+            output_path=str(temp_main),
             start=actual_start,
             end=actual_end,
             aspect_ratio=req.aspect_ratio or "9:16",
             add_subtitles_path=srt_path,
         )
+
+        # If outro requested, append ClipForge AI end bumper
+        if req.include_outro:
+            processor.append_outro(
+                main_video_path=str(temp_main),
+                output_path=str(rendered_path),
+                aspect_ratio=req.aspect_ratio or "9:16",
+                duration=2.5,
+            )
+            duration = round(duration + 2.5, 1)
+        else:
+            if rendered_path.exists():
+                rendered_path.unlink()
+            temp_main.rename(rendered_path)
     except Exception as exc:
         logger.exception("Failed to encode rendered clip: %s", exc)
         raise HTTPException(status_code=500, detail=f"Render failed: {exc}")
@@ -591,6 +607,11 @@ async def render_selective_section(req: SelectiveRenderRequest):
                 Path(srt_path).unlink()
             except Exception:
                 pass
+        if temp_main.exists():
+            try:
+                temp_main.unlink()
+            except Exception:
+                pass
 
     return {
         "success": True,
@@ -598,5 +619,7 @@ async def render_selective_section(req: SelectiveRenderRequest):
         "filename": rendered_filename,
         "duration": duration,
         "aspect_ratio": req.aspect_ratio or "9:16",
+        "has_outro": req.include_outro,
     }
+
 
