@@ -1,25 +1,37 @@
 import { useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuthStore } from '@/store/authStore'
 
 export function useAuth() {
   const { user, profile, loading, setUser, setProfile, setLoading, signOut } = useAuthStore()
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null)
-      setLoading(false)
-    })
+    if (isSupabaseConfigured) {
+      // Supabase is configured with real cloud URL & key
+      supabase.auth.getSession().then(({ data }) => {
+        if (data?.session?.user) {
+          setUser(data.session.user as any)
+        }
+        setLoading(false)
+      }).catch(() => {
+        setLoading(false)
+      })
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          setUser(session.user as any)
+        } else {
+          setUser(null)
+        }
+        setLoading(false)
+      })
 
-    return () => subscription.unsubscribe()
-  }, []) // eslint-disable-line
+      return () => subscription.unsubscribe()
+    } else {
+      // Local dev mode: preserve current user from persisted zustand store
+      setLoading(false)
+    }
+  }, [setUser, setLoading])
 
   return { user, profile, loading, signOut, isAdmin: profile?.role === 'admin' }
 }

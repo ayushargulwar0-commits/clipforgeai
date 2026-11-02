@@ -41,9 +41,9 @@ export default function ForgotPassword() {
 
   return (
     <PublicLayout hideFooter>
-      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+      <div className="min-h-[calc(100vh-4rem)] pt-8 pb-16 px-4 flex flex-col items-center justify-center">
         <div className="w-full max-w-md">
-          <div className="text-center mb-8">
+          <div className="text-center mb-6">
             <Link to="/" className="inline-flex items-center gap-2 mb-4">
               <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-600 to-accent-500 flex items-center justify-center shadow-brand">
                 <Zap size={20} className="text-white" fill="white" />

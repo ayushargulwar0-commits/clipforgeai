@@ -1,15 +1,24 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL  as string
-const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY as string
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || ''
+const supabaseAnon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || ''
 
-if (!supabaseUrl || !supabaseAnon) {
-  console.warn('[ClipForge] Supabase env vars not set — auth will be unavailable in this environment.')
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+  !supabaseUrl.includes('placeholder') &&
+  supabaseAnon &&
+  !supabaseAnon.includes('placeholder')
+)
+
+if (!isSupabaseConfigured) {
+  console.info(
+    '[ClipForge] Supabase credentials not set — running in Local Development / Offline Auth Mode. All features will work with local persistence.'
+  )
 }
 
 export const supabase = createClient(
-  supabaseUrl  || 'https://placeholder.supabase.co',
-  supabaseAnon || 'placeholder-anon-key',
+  isSupabaseConfigured ? supabaseUrl : 'https://placeholder.supabase.co',
+  isSupabaseConfigured ? supabaseAnon : 'placeholder-anon-key',
   {
     auth: {
       persistSession: true,
@@ -18,4 +27,4 @@ export const supabase = createClient(
   }
 )
 
-export type SupabaseUser = Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user']
+export type SupabaseUser = any
