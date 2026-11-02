@@ -165,6 +165,14 @@ def create_app() -> FastAPI:
     app.include_router(usage.router, prefix="/api", tags=["Usage"])
     app.include_router(admin.router, prefix="/api", tags=["Admin"])
 
+    # -------------------------------------------------------------------
+    # Static files (local storage)
+    # -------------------------------------------------------------------
+    from fastapi.staticfiles import StaticFiles
+
+    settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/storage", StaticFiles(directory=str(settings.STORAGE_DIR)), name="storage")
+
     return app
 
 

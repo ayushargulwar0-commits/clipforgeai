@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { PublicLayout } from '@/components/layout/PublicLayout'
+import { useAuth } from '@/hooks/useAuth'
 
 const PLATFORMS = [
   { name: 'TikTok', icon: '🎵', tag: '9:16 Vertical' },
@@ -132,12 +133,19 @@ const FAQS = [
 
 export default function Home() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [openFaq, setOpenFaq] = useState<number | null>(0)
   const [quickUrl, setQuickUrl] = useState('')
 
   const handleQuickStart = (e: React.FormEvent) => {
     e.preventDefault()
-    navigate('/signup')
+    if (!quickUrl.trim()) return
+    sessionStorage.setItem('cf_pending_url', quickUrl.trim())
+    if (user) {
+      navigate(`/dashboard/clips?import=${encodeURIComponent(quickUrl.trim())}`)
+    } else {
+      navigate(`/signup?import=${encodeURIComponent(quickUrl.trim())}`)
+    }
   }
 
   return (

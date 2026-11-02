@@ -163,3 +163,88 @@ def generate_thumbnail(
         raise RuntimeError(f"Thumbnail generation failed: {exc.stderr[-200:]}") from exc
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"Thumbnail generation timed out for {file_path}") from exc
+
+
+def is_safe_url(url: str) -> bool:
+    """Validate URL format and prevent SSRF attacks."""
+    from urllib.parse import urlparse
+    import re
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+
+    blocked_patterns = [
+        r"^localhost$",
+        r"^127\.",
+        r"^0\.0\.0\.0",
+        r"^10\.",
+        r"^192\.168\.",
+        r"^172\.(1[6-9]|2[0-9]|3[0-1])\.",
+        r"^169\.254\.",
+        r"\.local$",
+        r"\.internal$",
+    ]
+    for pattern in blocked_patterns:
+        if re.search(pattern, host):
+            return False
+    return True
+
+
+def extract_youtube_id(url: str) -> str | None:
+    """Extract YouTube video ID from watch URL or short link."""
+    import re
+    match = re.search(r"(?:v=|\/|youtu\.be\/)([0-9A-Za-z_-]{11})", url)
+    return match.group(1) if match else None
+
+
+def download_video_from_url(url: str, output_dir: Path) -> dict:
+    """
+    Download video or audio from YouTube or any public video URL using yt-dlp.
+    Returns metadata dict with file_path, title, duration, dimensions, etc.
+    """
+    if not is_safe_url(url):
+        raise ValueError("Invalid or disallowed URL. Only public HTTP/HTTPS URLs are supported.")
+
+    import yt_dlp
+    import uuid
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    temp_id = str(uuid.uuid4())[:8]
+    out_tmpl = str(output_dir / f"yt_{temp_id}_%(id)s.%(ext)s")
+
+    ydl_opts = {
+        "format": "best[ext=mp4][height<=720]/best[ext=mp4]/best",
+        "outtmpl": out_tmpl,
+        "max_filesize": 350 * 1024 * 1024,
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+    except Exception as exc:
+        logger.exception("yt-dlp download failed for %s", url)
+        raise RuntimeError(f"Failed to download video stream from URL: {exc}") from exc
+
+    yt_id = extract_youtube_id(url)
+    return {
+        "file_path": filename,
+        "filename": Path(filename).name,
+        "title": info.get("title", "Imported Video"),
+        "duration": info.get("duration", 0),
+        "width": info.get("width") or 1280,
+        "height": info.get("height") or 720,
+        "fps": info.get("fps") or 30,
+        "thumbnail": info.get("thumbnail"),
+        "youtube_id": yt_id,
+        "youtube_url": url if yt_id else None,
+        "file_size": Path(filename).stat().st_size if Path(filename).exists() else 0,
+    }
+
