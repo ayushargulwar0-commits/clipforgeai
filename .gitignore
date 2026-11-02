@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Builds
+dist/
+build/
+*.egg-info/
+.tmp/
+
+# Storage / Uploads
+storage/
+*.mp4
+*.mov
+*.wav
+*.mkv
+*.webm
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.log
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
