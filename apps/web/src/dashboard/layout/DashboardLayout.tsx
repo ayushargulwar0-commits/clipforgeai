@@ -224,17 +224,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     </span>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-1 mt-0.5">
-                    <Badge variant={planVariant} className="capitalize text-[10px]">
-                      {profile?.plan ?? 'free'}
-                    </Badge>
-                    <button
-                      onClick={elevateToOwner}
-                      className="text-[10px] text-amber-400 hover:text-amber-300 font-semibold underline text-left flex items-center gap-1"
-                    >
-                      👑 Activate Owner Access
-                    </button>
-                  </div>
+                  <Badge variant={planVariant} className="mt-0.5 capitalize text-[10px]">
+                    {profile?.plan ?? 'free'}
+                  </Badge>
                 )}
               </motion.div>
             )}
@@ -354,7 +346,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
           <div className="ml-auto flex items-center gap-2">
             {/* Owner status pill */}
-            {isOwner ? (
+            {isOwner && (
               <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-amber-500/15 via-brand-600/20 to-purple-600/15 border border-amber-500/30 text-amber-300 text-xs font-semibold">
                 <Crown size={14} className="text-amber-400 shrink-0" />
                 <span>Owner: <strong className="text-white">Ayush Argulwar</strong></span>
@@ -362,15 +354,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   ∞ Unlimited Credits
                 </span>
               </div>
-            ) : (
-              <button
-                onClick={elevateToOwner}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-semibold transition-all"
-                title="Switch to Owner Full Access mode"
-              >
-                <Crown size={14} />
-                <span>Activate Owner Access</span>
-              </button>
             )}
 
             {/* Notifications */}

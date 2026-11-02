@@ -101,25 +101,6 @@ export default function Login() {
     }
   }
 
-  const handleOwnerLogin = () => {
-    const ownerUser = {
-      id: 'owner-ayush',
-      email: 'ayushargulwar0@gmail.com',
-      user_metadata: { full_name: 'Ayush Argulwar', plan: 'team' },
-    }
-    setUser(ownerUser)
-    setProfile({
-      id: ownerUser.id,
-      full_name: 'Ayush Argulwar',
-      avatar_url: null,
-      role: 'admin',
-      plan: 'team',
-      credits: 999999,
-    })
-    success('Welcome Platform Owner!', 'Full Owner access granted with unlimited credits and Admin Console.')
-    navigate('/dashboard')
-  }
-
   const handleQuickDemo = () => {
     const mockUser = {
       id: 'demo-user',
@@ -179,25 +160,6 @@ export default function Login() {
           </div>
 
           <Card className="p-8">
-            {/* 👑 Instant Owner Login Banner */}
-            <div className="mb-6 p-3.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-purple-600/15 border border-amber-500/35 text-center space-y-2">
-              <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-300">
-                <Crown size={15} className="text-amber-400" />
-                <span>Platform Owner Fast-Track</span>
-              </div>
-              <Button
-                type="button"
-                onClick={handleOwnerLogin}
-                className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs shadow-md shadow-amber-500/20 border border-amber-400 gap-1.5"
-              >
-                <Crown size={15} className="fill-black" />
-                <span>Log in as Owner (Ayush Argulwar)</span>
-              </Button>
-              <p className="text-[10px] text-slate-400">
-                ayushargulwar0@gmail.com • Unlimited Credits & All Features Unlocked
-              </p>
-            </div>
-
             <form onSubmit={handleLogin} className="space-y-4">
               <Input
                 label="Email"
