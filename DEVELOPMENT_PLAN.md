@@ -225,7 +225,19 @@ GET    /api/usage                   → Usage & credits
 
 ---
 
-## Dependency Install Plan (before Phase 2)
+## Recent Milestone: Selective Section Video Editor & Range Download
+
+- [x] **Backend Partial Range Download**: Integrated `yt-dlp` partial range streaming with `ensure_ffmpeg()` and FFmpeg remuxing. Only downloads the selected 20-40 second window rather than full 30-minute videos.
+- [x] **FastAPI Selective Endpoints**:
+  - `POST /api/clips/selective-download`: Fast cut of requested range `[start_time, end_time]` into `/storage/clips/clip_{id}_section.mp4`.
+  - `POST /api/clips/selective-render`: Direct H.264 1080x1920 9:16 vertical render with burned-in styled subtitles and aspect ratio cropping.
+- [x] **Studio Video Editor**:
+  - Automatically loads clip metadata from query parameter (`?clip=<id>`).
+  - Scopes timeline scrubber and canvas preview strictly to the **selective section** (`[startTime, endTime]`).
+  - Embedded YouTube player locked to `start` & `end` timestamps + HTML5 native video player for downloaded cuts.
+  - Live animated caption styling (font size, highlight color, position top/middle/bottom).
+  - 1-click **Export 9:16 Video** producing real downloadable MP4s.
+
 
 ### FFmpeg (Windows via winget)
 ```powershell
