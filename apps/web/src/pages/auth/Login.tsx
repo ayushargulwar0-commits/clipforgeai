@@ -6,8 +6,8 @@ import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
 import { useToast } from '@/components/ui/Toast'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
-import { useAuthStore } from '@/store/authStore'
-import { Zap, Lock, Mail, ArrowRight, Sparkles } from 'lucide-react'
+import { useAuthStore, isOwnerEmail } from '@/store/authStore'
+import { Zap, Lock, Mail, ArrowRight, Sparkles, Crown } from 'lucide-react'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -33,23 +33,31 @@ export default function Login() {
     if (!validate()) return
 
     setLoading(true)
+    const isOwner = isOwnerEmail(email)
 
     const setLocalSession = () => {
       const mockUser = {
-        id: 'usr-local',
+        id: isOwner ? 'owner-ayush' : 'usr-local',
         email,
-        user_metadata: { full_name: email.split('@')[0], plan: 'creator' },
+        user_metadata: {
+          full_name: isOwner ? 'Ayush Argulwar' : email.split('@')[0],
+          plan: isOwner ? 'team' : 'creator',
+        },
       }
       setUser(mockUser)
       setProfile({
         id: mockUser.id,
-        full_name: email.split('@')[0],
+        full_name: isOwner ? 'Ayush Argulwar' : email.split('@')[0],
         avatar_url: null,
-        role: 'user',
-        plan: 'creator',
-        credits: 100,
+        role: isOwner ? 'admin' : 'user',
+        plan: isOwner ? 'team' : 'creator',
+        credits: isOwner ? 999999 : 100,
       })
-      success('Welcome back!', 'Signed in successfully (Local Development Mode).')
+      if (isOwner) {
+        success('Welcome Owner!', 'Signed in as Platform Owner & Super Admin with Full Access.')
+      } else {
+        success('Welcome back!', 'Signed in successfully.')
+      }
       navigate('/dashboard')
     }
 
@@ -72,13 +80,17 @@ export default function Login() {
         setUser(data.user as any)
         setProfile({
           id: data.user.id,
-          full_name: data.user.user_metadata?.full_name || email.split('@')[0],
+          full_name: isOwner ? 'Ayush Argulwar' : (data.user.user_metadata?.full_name || email.split('@')[0]),
           avatar_url: null,
-          role: 'user',
-          plan: 'creator',
-          credits: 100,
+          role: isOwner ? 'admin' : 'user',
+          plan: isOwner ? 'team' : 'creator',
+          credits: isOwner ? 999999 : 100,
         })
-        success('Welcome back!', 'Signed in successfully.')
+        if (isOwner) {
+          success('Welcome Owner!', 'Signed in as Platform Owner with Full Access.')
+        } else {
+          success('Welcome back!', 'Signed in successfully.')
+        }
         navigate('/dashboard')
       }
     } catch (err: any) {
@@ -87,6 +99,25 @@ export default function Login() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleOwnerLogin = () => {
+    const ownerUser = {
+      id: 'owner-ayush',
+      email: 'ayushargulwar0@gmail.com',
+      user_metadata: { full_name: 'Ayush Argulwar', plan: 'team' },
+    }
+    setUser(ownerUser)
+    setProfile({
+      id: ownerUser.id,
+      full_name: 'Ayush Argulwar',
+      avatar_url: null,
+      role: 'admin',
+      plan: 'team',
+      credits: 999999,
+    })
+    success('Welcome Platform Owner!', 'Full Owner access granted with unlimited credits and Admin Console.')
+    navigate('/dashboard')
   }
 
   const handleQuickDemo = () => {
@@ -107,6 +138,7 @@ export default function Login() {
     success('Demo Access Granted', 'Signed in as Demo Creator.')
     navigate('/dashboard')
   }
+
 
   const handleGoogleSignIn = async () => {
     if (!isSupabaseConfigured) {
@@ -147,6 +179,25 @@ export default function Login() {
           </div>
 
           <Card className="p-8">
+            {/* 👑 Instant Owner Login Banner */}
+            <div className="mb-6 p-3.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-purple-600/15 border border-amber-500/35 text-center space-y-2">
+              <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-300">
+                <Crown size={15} className="text-amber-400" />
+                <span>Platform Owner Fast-Track</span>
+              </div>
+              <Button
+                type="button"
+                onClick={handleOwnerLogin}
+                className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs shadow-md shadow-amber-500/20 border border-amber-400 gap-1.5"
+              >
+                <Crown size={15} className="fill-black" />
+                <span>Log in as Owner (Ayush Argulwar)</span>
+              </Button>
+              <p className="text-[10px] text-slate-400">
+                ayushargulwar0@gmail.com • Unlimited Credits & All Features Unlocked
+              </p>
+            </div>
+
             <form onSubmit={handleLogin} className="space-y-4">
               <Input
                 label="Email"
@@ -231,6 +282,7 @@ export default function Login() {
               </Button>
             </div>
           </Card>
+
 
           <p className="text-center text-xs text-slate-400 mt-6">
             Don&rsquo;t have an account?{' '}

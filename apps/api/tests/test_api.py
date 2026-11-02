@@ -29,6 +29,19 @@ def test_unauthenticated_protected_routes():
     print("Security authentication guard test PASSED (status code:", response.status_code, ")")
 
 
+def test_owner_super_admin_access():
+    client = TestClient(app)
+    # Requests with owner token should be authorized
+    response = client.get(
+        "/api/admin/stats",
+        headers={"Authorization": "Bearer owner-ayush-token"},
+    )
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert "total_users" in data or "total_jobs" in data
+    print("Owner super admin authorization test PASSED:", data)
+
+
 if __name__ == "__main__":
     test_health_check()
     test_unauthenticated_protected_routes()

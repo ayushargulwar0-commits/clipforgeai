@@ -8,12 +8,12 @@ import { useAuth } from '@/hooks/useAuth'
 import { User, Lock, Bell, Key, Shield, CheckCircle2 } from 'lucide-react'
 
 export default function Settings() {
-  const { user } = useAuth()
+  const { user, isOwner } = useAuth()
   const { success } = useToast()
   const [tab, setTab] = useState<'profile' | 'security' | 'notifications' | 'api'>('profile')
 
-  const [fullName, setFullName] = useState(user?.user_metadata?.full_name || 'Creator User')
-  const [email] = useState(user?.email || 'creator@example.com')
+  const [fullName, setFullName] = useState(user?.user_metadata?.full_name || (isOwner ? 'Ayush Argulwar' : 'Creator User'))
+  const [email] = useState(user?.email || (isOwner ? 'ayushargulwar0@gmail.com' : 'creator@example.com'))
   const [currentPass, setCurrentPass] = useState('')
   const [newPass, setNewPass] = useState('')
 
@@ -37,6 +37,31 @@ export default function Settings() {
           Manage your personal profile, workspace security, notifications, and API keys.
         </p>
       </div>
+
+      {isOwner && (
+        <Card className="p-4 bg-gradient-to-r from-amber-500/20 via-purple-600/20 to-blue-600/20 border-amber-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 font-bold text-lg">
+              👑
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-white">Platform Owner & Super Admin</span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-brand-600/40 text-brand-200 border border-brand-500/40 font-mono">
+                  ayushargulwar0@gmail.com
+                </span>
+              </div>
+              <p className="text-xs text-amber-300/80 mt-0.5">
+                Full platform access granted. Unlimited credits, all AI models, 4K rendering, and admin console unlocked.
+              </p>
+            </div>
+          </div>
+          <Badge variant="warning" className="text-xs font-mono font-bold">
+            ∞ UNLIMITED ACCESS
+          </Badge>
+        </Card>
+      )}
+
 
       {/* Tabs */}
       <div className="flex border-b border-surface-border gap-2">

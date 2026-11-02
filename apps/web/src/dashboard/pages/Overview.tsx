@@ -184,7 +184,7 @@ function ClipRow({ clip }: { clip: Clip }) {
 
 export function Overview() {
   const navigate = useNavigate()
-  const { profile } = useAuth()
+  const { user, profile, isOwner, isAdmin } = useAuth()
 
   const { data: stats = DEFAULT_STATS } = useQuery<OverviewStats>({
     queryKey: ['overview-stats'],
@@ -204,15 +204,17 @@ export function Overview() {
     staleTime: 60_000,
   })
 
-  const storageLabel = `${stats.storageUsedMB} MB / ${stats.storageMaxGB} GB`
-  const creditsPct = stats.creditsTotal > 0 ? (stats.creditsUsed / stats.creditsTotal) * 100 : 0
+  const storageLabel = isOwner ? '0.42 GB / ∞ Unlimited' : `${stats.storageUsedMB} MB / ${stats.storageMaxGB} GB`
+  const creditsPct = isOwner ? 0 : (stats.creditsTotal > 0 ? (stats.creditsUsed / stats.creditsTotal) * 100 : 0)
   const creditVariant = creditsPct >= 90 ? 'danger' : creditsPct >= 70 ? 'warning' : 'brand'
 
   const planVariant =
+    isOwner ? 'brand' :
     profile?.plan === 'pro' ? 'brand' :
     profile?.plan === 'team' ? 'success' :
     profile?.plan === 'creator' ? 'info' :
     'muted'
+
 
   const QUICK_ACTIONS = [
     { label: 'Upload Video',    icon: Upload,     href: '/dashboard/videos',          color: 'from-brand-600/20 to-brand-700/10 hover:from-brand-600/30' },
@@ -276,16 +278,20 @@ export function Overview() {
                   <Zap size={16} className="text-brand-400" />
                   Credits & Plan
                 </h2>
-                <Badge variant={planVariant} className="capitalize">{profile?.plan ?? 'free'}</Badge>
+                <Badge variant={planVariant} className="capitalize">
+                  {isOwner ? '👑 Founder' : (profile?.plan ?? 'free')}
+                </Badge>
               </div>
             </CardHeader>
             <CardBody className="space-y-4">
               <div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-slate-400">Credits used</span>
-                  <span className="text-slate-300 font-medium">{stats.creditsUsed} / {stats.creditsTotal}</span>
+                  <span className="text-slate-300 font-medium">
+                    {isOwner ? '0 / ∞ Unlimited' : `${stats.creditsUsed} / ${stats.creditsTotal}`}
+                  </span>
                 </div>
-                <Progress value={stats.creditsUsed} max={stats.creditsTotal} variant={creditVariant} size="md" />
+                <Progress value={isOwner ? 0 : stats.creditsUsed} max={stats.creditsTotal} variant={creditVariant} size="md" />
                 {creditsPct >= 80 && (
                   <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
                     <TrendingUp size={11} /> Running low on credits
@@ -293,8 +299,9 @@ export function Overview() {
                 )}
               </div>
               <Button variant="brand" size="sm" className="w-full" icon={<Zap size={14} />} onClick={() => navigate('/dashboard/usage')}>
-                {profile?.plan === 'free' ? 'Upgrade Plan' : 'Buy More Credits'}
+                {isOwner ? '👑 Founder Quota Settings' : profile?.plan === 'free' ? 'Upgrade Plan' : 'Buy More Credits'}
               </Button>
+
             </CardBody>
           </Card>
         </motion.div>

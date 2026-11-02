@@ -22,6 +22,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  ShieldAlert,
+  Crown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
@@ -59,6 +61,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/dashboard/scheduler': 'Content Scheduler',
   '/dashboard/usage':     'Usage & Credits',
   '/dashboard/settings':  'Settings',
+  '/dashboard/admin':     'Admin Operations Console',
   '/dashboard/help':      'Help & Support',
 }
 
@@ -71,17 +74,27 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
-  const { user, profile, signOut } = useAuth()
+  const { user, profile, isOwner, isAdmin, signOut, elevateToOwner } = useAuth()
+
+  const allNavItems: NavItem[] = [
+    NAV_ITEMS[0], // Overview
+    ...(isAdmin || isOwner
+      ? [{ label: 'Admin Console', icon: ShieldAlert, href: '/dashboard/admin' }]
+      : []),
+    ...NAV_ITEMS.slice(1),
+  ]
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), [])
 
   const pageTitle = PAGE_TITLES[location.pathname] ?? 'Dashboard'
 
   const planVariant =
+    isOwner ? 'brand' :
     profile?.plan === 'pro'  ? 'brand'   :
     profile?.plan === 'team' ? 'success' :
     profile?.plan === 'creator' ? 'info' :
     'muted'
+
 
   const handleSignOut = async () => {
     await signOut()
@@ -116,7 +129,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
-        {NAV_ITEMS.map((item) => {
+        {allNavItems.map((item) => {
           const isActive = location.pathname === item.href
           const Icon = item.icon
           return (
@@ -138,6 +151,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 className={cn(
                   'shrink-0 transition-colors',
                   isActive ? 'text-brand-400' : 'text-slate-500 group-hover:text-slate-300',
+                  item.href === '/dashboard/admin' && 'text-amber-400',
                 )}
               />
               <AnimatePresence initial={false}>
@@ -147,9 +161,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     animate={{ opacity: 1, width: 'auto' }}
                     exit={{ opacity: 0, width: 0 }}
                     transition={{ duration: 0.2 }}
-                    className="whitespace-nowrap overflow-hidden"
+                    className="whitespace-nowrap overflow-hidden flex items-center gap-1.5"
                   >
                     {item.label}
+                    {item.href === '/dashboard/admin' && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                        OWNER
+                      </span>
+                    )}
                   </motion.span>
                 )}
               </AnimatePresence>
@@ -174,8 +193,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           sidebarCollapsed && 'justify-center',
         )}>
           {/* Avatar */}
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-600 to-accent-500 flex items-center justify-center shrink-0 text-white text-sm font-bold">
-            {profile?.full_name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'U'}
+          <div className={cn(
+            'w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white text-base font-bold shadow-brand transition-all',
+            isOwner
+              ? 'bg-gradient-to-br from-amber-500 via-orange-500 to-purple-600 ring-2 ring-amber-400/60 shadow-amber-500/20'
+              : 'bg-gradient-to-br from-brand-600 to-accent-500'
+          )}>
+            {isOwner ? '👑' : (profile?.full_name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'U')}
           </div>
           <AnimatePresence initial={false}>
             {!sidebarCollapsed && (
@@ -186,16 +210,37 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 transition={{ duration: 0.2 }}
                 className="overflow-hidden min-w-0"
               >
-                <p className="text-sm font-medium text-slate-200 truncate">
-                  {profile?.full_name ?? user?.email?.split('@')[0] ?? 'User'}
+                <p className="text-sm font-bold text-white truncate flex items-center gap-1">
+                  {profile?.full_name ?? user?.email?.split('@')[0] ?? 'Ayush Argulwar'}
+                  {isOwner && <span title="Platform Owner" className="text-amber-400">⚡</span>}
                 </p>
-                <Badge variant={planVariant} className="mt-0.5 capitalize">
-                  {profile?.plan ?? 'free'}
-                </Badge>
+                {isOwner ? (
+                  <div className="flex flex-col gap-0.5 mt-0.5">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-gradient-to-r from-amber-500/30 to-purple-500/30 text-amber-300 border border-amber-500/40">
+                      👑 Owner • Full Access
+                    </span>
+                    <span className="text-[10px] text-brand-300 font-mono font-semibold">
+                      ∞ Unlimited Credits
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1 mt-0.5">
+                    <Badge variant={planVariant} className="capitalize text-[10px]">
+                      {profile?.plan ?? 'free'}
+                    </Badge>
+                    <button
+                      onClick={elevateToOwner}
+                      className="text-[10px] text-amber-400 hover:text-amber-300 font-semibold underline text-left flex items-center gap-1"
+                    >
+                      👑 Activate Owner Access
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
+
         <AnimatePresence initial={false}>
           {!sidebarCollapsed && (
             <motion.div
@@ -308,6 +353,26 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Owner status pill */}
+            {isOwner ? (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-amber-500/15 via-brand-600/20 to-purple-600/15 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                <Crown size={14} className="text-amber-400 shrink-0" />
+                <span>Owner: <strong className="text-white">Ayush Argulwar</strong></span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded-full font-mono font-bold">
+                  ∞ Unlimited Credits
+                </span>
+              </div>
+            ) : (
+              <button
+                onClick={elevateToOwner}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-semibold transition-all"
+                title="Switch to Owner Full Access mode"
+              >
+                <Crown size={14} />
+                <span>Activate Owner Access</span>
+              </button>
+            )}
+
             {/* Notifications */}
             <button className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
               <Bell size={18} />

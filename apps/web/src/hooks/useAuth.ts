@@ -1,11 +1,28 @@
 import { useEffect } from 'react'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
-import { useAuthStore } from '@/store/authStore'
+import { useAuthStore, isOwnerUser, isOwnerEmail } from '@/store/authStore'
 
 export function useAuth() {
-  const { user, profile, loading, setUser, setProfile, setLoading, signOut } = useAuthStore()
+  const { user, profile, loading, isOwner, setUser, setProfile, setLoading, signOut, elevateToOwner } = useAuthStore()
+
+  const userIsOwner = isOwner || isOwnerUser(user, profile) || isOwnerEmail(user?.email)
+  const isAdmin = userIsOwner || profile?.role === 'admin'
 
   useEffect(() => {
+    // If the session matches Ayush or owner credentials, ensure admin role and unlimited credits
+    if (userIsOwner) {
+      if (profile?.role !== 'admin' || profile?.credits !== 999999 || profile?.plan !== 'team' || !isOwner) {
+        setProfile({
+          id: user?.id || 'owner-ayush',
+          full_name: profile?.full_name || user?.user_metadata?.full_name || 'Ayush Argulwar',
+          avatar_url: null,
+          role: 'admin',
+          plan: 'team',
+          credits: 999999,
+        })
+      }
+    }
+
     if (isSupabaseConfigured) {
       // Supabase is configured with real cloud URL & key
       supabase.auth.getSession().then(({ data }) => {
@@ -31,12 +48,20 @@ export function useAuth() {
       // Local dev mode: preserve current user from persisted zustand store
       setLoading(false)
     }
-  }, [setUser, setLoading])
+  }, [setUser, setProfile, setLoading, userIsOwner, user, profile, isOwner])
 
-  return { user, profile, loading, signOut, isAdmin: profile?.role === 'admin' }
+  return {
+    user,
+    profile,
+    loading,
+    signOut,
+    isAdmin,
+    isOwner: userIsOwner,
+    elevateToOwner,
+  }
 }
 
 export function useRequireAuth() {
-  const { user, loading } = useAuth()
-  return { user, loading, isAuthenticated: !!user }
+  const { user, loading, isAdmin, isOwner } = useAuth()
+  return { user, loading, isAuthenticated: !!user, isAdmin, isOwner }
 }
