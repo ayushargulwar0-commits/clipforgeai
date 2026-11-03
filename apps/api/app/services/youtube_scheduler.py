@@ -224,11 +224,10 @@ class YouTubeSchedulerWorker:
                     is_mock = "mock" in str(tokens.get("access_token", ""))
                     if is_mock:
                         # Simulation / Mock mode
-                        mock_id = f"yt_{uuid.uuid4().hex[:10]}"
-                        shorts_url = f"https://youtube.com/shorts/{mock_id}"
+                        shorts_url = "https://studio.youtube.com/channel/videos/shorts"
                         update_post_status(post_id, {
                             "status": "published",
-                            "video_id": mock_id,
+                            "video_id": "shorts_queued",
                             "youtube_url": shorts_url,
                             "published_at": datetime.now(timezone.utc).isoformat(),
                             "error": None,

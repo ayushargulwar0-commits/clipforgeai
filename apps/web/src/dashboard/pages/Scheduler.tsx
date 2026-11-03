@@ -415,12 +415,20 @@ export default function Scheduler() {
               <div className="flex items-center gap-1.5">
                 {item.platform === 'youtube' && item.status === 'published' ? (
                   <a
-                    href={item.youtube_url || 'https://studio.youtube.com'}
+                    href={
+                      item.youtube_url && !item.youtube_url.includes('@')
+                        ? item.youtube_url
+                        : 'https://studio.youtube.com/channel/videos/shorts'
+                    }
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 transition shadow"
                   >
-                    <Youtube size={12} /> Watch <ExternalLink size={10} />
+                    <Youtube size={12} />{' '}
+                    {item.youtube_url && item.youtube_url.includes('/shorts/') && !item.youtube_url.includes('studio')
+                      ? 'Watch'
+                      : 'Studio'}{' '}
+                    <ExternalLink size={10} />
                   </a>
                 ) : item.platform === 'youtube' ? (
                   <Button

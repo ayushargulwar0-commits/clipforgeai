@@ -134,7 +134,7 @@ export function YouTubePublishModal({ open, onClose, clip }: YouTubePublishModal
               </div>
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <a
-                  href={publishedResult.studioUrl}
+                  href={publishedResult.studioUrl || 'https://studio.youtube.com'}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold transition shadow-lg shadow-red-600/30"
@@ -142,12 +142,18 @@ export function YouTubePublishModal({ open, onClose, clip }: YouTubePublishModal
                   <Youtube size={16} /> Open YouTube Studio <ExternalLink size={12} />
                 </a>
                 <a
-                  href={publishedResult.url}
+                  href={
+                    publishedResult.url && !publishedResult.url.includes('@')
+                      ? publishedResult.url
+                      : 'https://studio.youtube.com/channel/videos/shorts'
+                  }
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface hover:bg-surface-hover border border-surface-border text-white text-xs font-semibold transition"
                 >
-                  View Channel <ExternalLink size={12} />
+                  {publishedResult.url && publishedResult.url.includes('/shorts/') && !publishedResult.url.includes('studio')
+                    ? 'Watch Short'
+                    : 'Manage Shorts'} <ExternalLink size={12} />
                 </a>
                 <Button variant="ghost" size="sm" onClick={onClose}>
                   Done

@@ -286,20 +286,18 @@ async def upload_shorts(
     is_mock = "mock" in str(tokens.get("access_token", ""))
 
     if is_mock:
-        video_id = uuid.uuid4().hex[:11]
-        shorts_url = f"https://youtube.com/shorts/{video_id}"
-        logger.info("Upload completed in simulated mode for user %s: %s", user_id, shorts_url)
+        logger.info("Upload completed in simulated mode for user %s", user_id)
         return {
             "success": True,
             "upload_id": upload_id,
             "status": "done",
-            "video_id": video_id,
-            "shorts_url": shorts_url,
-            "studio_url": f"https://studio.youtube.com/video/{video_id}/edit",
+            "video_id": "shorts_queued",
+            "shorts_url": "https://studio.youtube.com/channel/videos/shorts",
+            "studio_url": "https://studio.youtube.com/channel/videos/shorts",
             "title": body.title,
             "privacy": body.privacy,
             "channel_name": tokens.get("channel_name", "My YouTube Channel"),
-            "message": "Video uploaded successfully to YouTube Shorts!",
+            "message": "Video queued and processed for YouTube Shorts! Manage in YouTube Studio.",
         }
 
     # Execute production upload with chunked resumable protocol
