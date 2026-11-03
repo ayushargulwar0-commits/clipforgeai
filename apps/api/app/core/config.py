@@ -110,6 +110,24 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # -----------------------------------------------------------------------
+    # YouTube Integration & OAuth 2.0
+    # -----------------------------------------------------------------------
+    YOUTUBE_CLIENT_ID: str = Field(
+        default="", description="Google OAuth 2.0 Client ID from Google Cloud Console"
+    )
+    YOUTUBE_CLIENT_SECRET: str = Field(
+        default="", description="Google OAuth 2.0 Client Secret"
+    )
+    YOUTUBE_REDIRECT_URI: str = Field(
+        default="http://localhost:8000/api/youtube/callback",
+        description="OAuth 2.0 redirect callback URI registered in Google Console",
+    )
+    YOUTUBE_ENCRYPTION_KEY: str = Field(
+        default="dGhpcy1pcy1hLTMyLWJ5dGUtZGV2LWtleS1mb3ItZmVybmV0ISE=",
+        description="Fernet symmetric key for encrypting OAuth tokens in storage",
+    )
+
+    # -----------------------------------------------------------------------
     # Rate limiting
     # -----------------------------------------------------------------------
     RATE_LIMIT_DEFAULT: str = Field(
