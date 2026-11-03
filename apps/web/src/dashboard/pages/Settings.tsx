@@ -1,3 +1,4 @@
+import { YouTubeConnectModal } from '@/components/youtube/YouTubeConnectModal'
 import { Youtube } from '@/components/ui/Icons'
 import { useState } from 'react'
 import { Card } from '@/components/ui/Card'
@@ -20,6 +21,7 @@ export default function Settings() {
   const [currentPass, setCurrentPass] = useState('')
   const [newPass, setNewPass] = useState('')
   const [customChannel, setCustomChannel] = useState(channel.channelName || 'Ayush Argulwar Shorts')
+  const [connectModalOpen, setConnectModalOpen] = useState(false)
 
   const handleProfileSave = (e: React.FormEvent) => {
     e.preventDefault()
@@ -155,14 +157,10 @@ export default function Settings() {
               ) : (
                 <Button
                   size="sm"
-                  onClick={async () => {
-                    await connectAccount(customChannel)
-                    success('YouTube Linked!', `Connected to "${customChannel}" successfully.`)
-                  }}
-                  loading={ytLoading}
+                  onClick={() => setConnectModalOpen(true)}
                   className="bg-red-600 hover:bg-red-500 text-white font-bold gap-1.5 shadow-lg shadow-red-600/20"
                 >
-                  <Youtube size={16} /> Connect Account
+                  <Youtube size={16} /> Sign In & Connect Channel
                 </Button>
               )}
             </div>
@@ -191,31 +189,24 @@ export default function Settings() {
                 </div>
               </div>
             ) : (
-              <div className="p-4 rounded-xl bg-surface border border-surface-border space-y-3">
-                <label className="text-xs font-semibold text-slate-300 block">
-                  YouTube Channel Name or Creator Handle
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    value={customChannel}
-                    onChange={(e) => setCustomChannel(e.target.value)}
-                    placeholder="e.g. Ayush Argulwar / @clipforge"
-                  />
+              <div className="p-5 rounded-xl bg-surface border border-surface-border space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                      Google OAuth 2.0 & YouTube Channel Login
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Authorize ClipForge AI to securely push 1080p rendered Shorts and schedule releases.
+                    </p>
+                  </div>
                   <Button
                     size="sm"
-                    onClick={async () => {
-                      await connectAccount(customChannel)
-                      success('YouTube Connected', `Linked to "${customChannel}"`)
-                    }}
-                    loading={ytLoading}
-                    className="bg-red-600 hover:bg-red-500 text-white shrink-0 font-bold gap-1"
+                    onClick={() => setConnectModalOpen(true)}
+                    className="bg-red-600 hover:bg-red-500 text-white font-bold gap-1.5 shrink-0 shadow-lg shadow-red-600/20"
                   >
-                    <Youtube size={14} /> Link
+                    <Youtube size={14} /> Sign In with YouTube
                   </Button>
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  After linking, clips rendered in ClipForge AI can be published directly as YouTube Shorts or scheduled for peak engagement times.
-                </p>
               </div>
             )}
 
@@ -314,6 +305,12 @@ export default function Settings() {
           </Button>
         </Card>
       )}
+    
+      {/* Google Sign In & Channel Authorization Modal */}
+      <YouTubeConnectModal
+        open={connectModalOpen}
+        onClose={() => setConnectModalOpen(false)}
+      />
     </div>
   )
 }

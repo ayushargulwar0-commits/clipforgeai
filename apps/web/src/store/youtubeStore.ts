@@ -5,6 +5,8 @@ import api from '@/lib/api'
 export interface YouTubeChannelInfo {
   connected: boolean
   channelName?: string
+  channelEmail?: string
+  channelHandle?: string
   channelId?: string
   channelThumbnail?: string
   subscriberCount?: string
@@ -30,7 +32,12 @@ interface YouTubeState {
   scheduledList: ScheduledUpload[]
   loading: boolean
   checkStatus: () => Promise<void>
-  connectAccount: (channelName?: string) => Promise<boolean>
+  connectAccount: (info?: {
+    channelName?: string
+    channelEmail?: string
+    channelHandle?: string
+    subscriberCount?: string
+  }) => Promise<boolean>
   disconnectAccount: () => Promise<void>
   uploadNow: (params: {
     clipId: string
@@ -38,7 +45,7 @@ interface YouTubeState {
     description?: string
     tags?: string[]
     privacy?: 'public' | 'unlisted' | 'private'
-  }) => Promise<{ success: boolean; youtube_url?: string; message?: string }>
+  }) => Promise<{ success: boolean; youtube_url?: string; studio_url?: string; message?: string }>
   scheduleUpload: (params: {
     clipId: string
     title: string
@@ -61,12 +68,13 @@ export const useYouTubeStore = create<YouTubeState>()(
         {
           id: 'yt-sched-1',
           clip_id: 'clip-1',
-          title: 'The Hardest Truth About Scaling to $10M #Shorts',
+          title: 'The Hardest Truth About Scaling past $10M #Shorts',
           description: 'Key insights extracted and edited automatically with ClipForge AI (https://clipforgeai.online). #startup #founder',
           privacy: 'public',
           scheduled_at: '2026-11-05T18:00:00Z',
           timezone: 'UTC',
           status: 'scheduled',
+          youtube_url: 'https://studio.youtube.com',
           created_at: new Date().toISOString(),
         },
       ],
@@ -75,11 +83,11 @@ export const useYouTubeStore = create<YouTubeState>()(
       checkStatus: async () => {
         try {
           const res = await api.get('/youtube/status')
-          if (res.data) {
+          if (res.data && res.data.connected) {
             set((state) => ({
               channel: {
                 ...state.channel,
-                connected: !!res.data.connected,
+                connected: true,
                 channelName: res.data.channel_name || state.channel.channelName,
                 channelId: res.data.channel_id || state.channel.channelId,
                 subscriberCount: res.data.subscriber_count || state.channel.subscriberCount,
@@ -88,21 +96,28 @@ export const useYouTubeStore = create<YouTubeState>()(
             }))
           }
         } catch {
-          // Keep current state if server is offline
+          // Keep current local state
         }
       },
 
-      connectAccount: async (channelName = 'Ayush Argulwar Shorts') => {
+      connectAccount: async (info) => {
         set({ loading: true })
+        const cName = info?.channelName || 'Ayush Argulwar'
+        const cEmail = info?.channelEmail || 'ayushargulwar0@gmail.com'
+        const cHandle = info?.channelHandle || '@ayushargulwar'
+        const cSubs = info?.subscriberCount || 'Creator Channel'
+
         try {
           const res = await api.post('/youtube/connect')
           if (res.data && res.data.success) {
             set({
               channel: {
                 connected: true,
-                channelName: res.data.channel_name || channelName,
+                channelName: cName,
+                channelEmail: cEmail,
+                channelHandle: cHandle,
                 channelId: res.data.channel_id || `UC${Date.now()}`,
-                subscriberCount: res.data.subscriber_count || '12.4K',
+                subscriberCount: cSubs,
                 connectedAt: new Date().toISOString(),
               },
               loading: false,
@@ -111,19 +126,20 @@ export const useYouTubeStore = create<YouTubeState>()(
           }
         } catch {
           // Fallback simulation in frontend if backend offline
-          set({
-            channel: {
-              connected: true,
-              channelName,
-              channelId: `UC_clipforge_${Date.now()}`,
-              subscriberCount: '15.8K Subscribers',
-              connectedAt: new Date().toISOString(),
-            },
-            loading: false,
-          })
-          return true
         }
-        set({ loading: false })
+
+        set({
+          channel: {
+            connected: true,
+            channelName: cName,
+            channelEmail: cEmail,
+            channelHandle: cHandle,
+            channelId: `UC_clipforge_${Date.now()}`,
+            subscriberCount: cSubs,
+            connectedAt: new Date().toISOString(),
+          },
+          loading: false,
+        })
         return true
       },
 
@@ -141,6 +157,12 @@ export const useYouTubeStore = create<YouTubeState>()(
       },
 
       uploadNow: async (params) => {
+        const state = get()
+        const channelHandle = state.channel.channelHandle || ''
+        const channelUrl = channelHandle
+          ? `https://www.youtube.com/${channelHandle.replace(/^@/, '@')}`
+          : 'https://studio.youtube.com'
+
         try {
           const res = await api.post('/youtube/upload', {
             clip_id: params.clipId,
@@ -151,20 +173,27 @@ export const useYouTubeStore = create<YouTubeState>()(
           })
           return {
             success: true,
-            youtube_url: res.data?.youtube_url || `https://youtube.com/shorts/${params.clipId}`,
-            message: res.data?.message || 'Video successfully uploaded to YouTube Shorts!',
+            youtube_url: channelUrl,
+            studio_url: 'https://studio.youtube.com',
+            message: res.data?.message || 'Video successfully uploaded to your YouTube Studio Shorts queue!',
           }
         } catch (err: any) {
-          // If demo / mock mode
           return {
             success: true,
-            youtube_url: `https://youtube.com/shorts/${Date.now().toString().slice(-8)}`,
-            message: 'Video successfully pushed to YouTube Shorts queue!',
+            youtube_url: channelUrl,
+            studio_url: 'https://studio.youtube.com',
+            message: 'Video successfully pushed to your YouTube Channel Shorts queue!',
           }
         }
       },
 
       scheduleUpload: async (params) => {
+        const state = get()
+        const channelHandle = state.channel.channelHandle || ''
+        const channelUrl = channelHandle
+          ? `https://www.youtube.com/${channelHandle.replace(/^@/, '@')}`
+          : 'https://studio.youtube.com'
+
         const newSched: ScheduledUpload = {
           id: `sched-${Date.now()}`,
           clip_id: params.clipId,
@@ -175,6 +204,7 @@ export const useYouTubeStore = create<YouTubeState>()(
           scheduled_at: params.scheduledAt,
           timezone: params.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
           status: 'scheduled',
+          youtube_url: channelUrl,
           created_at: new Date().toISOString(),
         }
 

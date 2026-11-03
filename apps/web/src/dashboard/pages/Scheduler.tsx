@@ -1,4 +1,3 @@
-import { Youtube } from '@/components/ui/Icons'
 import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -8,6 +7,8 @@ import { Input, TextArea } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
 import { useYouTubeStore } from '@/store/youtubeStore'
 import { YouTubePublishModal } from '@/components/youtube/YouTubePublishModal'
+import { YouTubeConnectModal } from '@/components/youtube/YouTubeConnectModal'
+import { Youtube } from '@/components/ui/Icons'
 import {
   Calendar as CalendarIcon,
   Plus,
@@ -43,6 +44,7 @@ const INITIAL_SCHEDULE: ScheduledItem[] = [
     time: '18:00',
     status: 'scheduled',
     caption: 'Why scaling past $10M breaks everything you built. Auto-clipped by ClipForge AI. #shorts #founder #growth',
+    youtube_url: 'https://studio.youtube.com',
   },
   {
     id: 's-2',
@@ -52,6 +54,7 @@ const INITIAL_SCHEDULE: ScheduledItem[] = [
     time: '12:00',
     status: 'scheduled',
     caption: 'Stop over-engineering before product-market fit. Full breakdown in this Short.',
+    youtube_url: 'https://studio.youtube.com',
   },
   {
     id: 's-3',
@@ -66,11 +69,12 @@ const INITIAL_SCHEDULE: ScheduledItem[] = [
 
 export default function Scheduler() {
   const { success, error: toastError } = useToast()
-  const { channel, connectAccount, scheduledList, uploadNow, loading: ytLoading } = useYouTubeStore()
+  const { channel, scheduledList, uploadNow, loading: ytLoading } = useYouTubeStore()
 
   const [items, setItems] = useState<ScheduledItem[]>(INITIAL_SCHEDULE)
   const [modalOpen, setModalOpen] = useState(false)
   const [ytModalOpen, setYtModalOpen] = useState(false)
+  const [connectModalOpen, setConnectModalOpen] = useState(false)
   const [publishingId, setPublishingId] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
@@ -90,7 +94,7 @@ export default function Scheduler() {
         time: s.scheduled_at.split('T')[1]?.slice(0, 5) || '18:00',
         status: (s.status as any) || 'scheduled',
         caption: s.description,
-        youtube_url: s.youtube_url,
+        youtube_url: s.youtube_url || 'https://studio.youtube.com',
       }))
       // Merge unique
       setItems((prev) => {
@@ -111,6 +115,7 @@ export default function Scheduler() {
       time,
       status: 'scheduled',
       caption,
+      youtube_url: 'https://studio.youtube.com',
     }
     setItems([newItem, ...items])
     success('Post Scheduled', `Video queued for ${date} at ${time} on ${platform.toUpperCase()}.`)
@@ -121,7 +126,7 @@ export default function Scheduler() {
 
   const handleInstantUpload = async (item: ScheduledItem) => {
     if (!channel.connected) {
-      toastError('YouTube Required', 'Please link your YouTube channel first.')
+      setConnectModalOpen(true)
       return
     }
     setPublishingId(item.id)
@@ -138,7 +143,7 @@ export default function Scheduler() {
             i.id === item.id ? { ...i, status: 'published', youtube_url: res.youtube_url } : i
           )
         )
-        success('Published to YouTube!', `"${item.title}" is now uploaded as a YouTube Short!`)
+        success('Queued to YouTube Studio!', `"${item.title}" has been sent to your YouTube upload queue!`)
       }
     } catch (err: any) {
       toastError('Upload Failed', err?.message || 'Could not push upload to YouTube.')
@@ -159,7 +164,10 @@ export default function Scheduler() {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            onClick={() => setYtModalOpen(true)}
+            onClick={() => {
+              if (!channel.connected) setConnectModalOpen(true)
+              else setYtModalOpen(true)
+            }}
             className="gap-2 text-xs font-bold bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-lg shadow-red-600/25"
           >
             <Youtube size={16} /> YouTube Auto-Publisher
@@ -183,42 +191,49 @@ export default function Scheduler() {
               </h2>
               {channel.connected ? (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                  <CheckCircle2 size={10} /> Connected
+                  <CheckCircle2 size={10} /> {channel.channelHandle || 'Connected'}
                 </span>
               ) : (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                  Channel Disconnected
+                  Channel Sign In Required
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               {channel.connected
-                ? `${channel.subscriberCount || 'Official Creator Account'} • Direct 1-Click Upload & Scheduling active.`
-                : 'Connect your YouTube channel to push clips directly to YouTube Shorts or queue them for optimal release windows.'}
+                ? `Authorized as ${channel.channelEmail || 'Google Account'} • Direct 1-Click Upload & Scheduling active.`
+                : 'Sign in with your YouTube account to link channel and push AI-generated clips directly to YouTube Shorts.'}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto">
           {channel.connected ? (
-            <Button
-              size="sm"
-              onClick={() => setYtModalOpen(true)}
-              className="w-full md:w-auto bg-red-600 hover:bg-red-500 text-white font-bold gap-1.5 shadow-lg shadow-red-600/20 text-xs"
-            >
-              <Send size={14} /> Quick Upload to Shorts
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => setYtModalOpen(true)}
+                className="bg-red-600 hover:bg-red-500 text-white font-bold gap-1.5 shadow-lg shadow-red-600/20 text-xs"
+              >
+                <Send size={14} /> Quick Upload to Shorts
+              </Button>
+              <a
+                href="https://studio.youtube.com"
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 rounded-xl bg-surface hover:bg-surface-hover border border-surface-border text-white text-xs font-semibold flex items-center gap-1 transition"
+              >
+                YouTube Studio <ExternalLink size={12} />
+              </a>
+            </div>
           ) : (
             <Button
               size="sm"
               loading={ytLoading}
-              onClick={async () => {
-                await connectAccount()
-                success('YouTube Connected', 'Account linked! You can now publish directly.')
-              }}
+              onClick={() => setConnectModalOpen(true)}
               className="w-full md:w-auto bg-red-600 hover:bg-red-500 text-white font-bold gap-1.5 shadow-lg shadow-red-600/20 text-xs"
             >
-              <Youtube size={14} /> Connect YouTube Channel
+              <Youtube size={14} /> Sign In & Connect YouTube Channel
             </Button>
           )}
         </div>
@@ -256,14 +271,14 @@ export default function Scheduler() {
               </span>
 
               <div className="flex items-center gap-1.5">
-                {item.youtube_url ? (
+                {item.platform === 'youtube' && item.status === 'published' ? (
                   <a
-                    href={item.youtube_url}
+                    href={item.youtube_url || 'https://studio.youtube.com'}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 transition"
                   >
-                    <Youtube size={12} /> Watch <ExternalLink size={10} />
+                    <Youtube size={12} /> YouTube Studio <ExternalLink size={10} />
                   </a>
                 ) : item.platform === 'youtube' && item.status !== 'published' ? (
                   <Button
@@ -374,6 +389,13 @@ export default function Scheduler() {
           description: 'Auto-cut and formatted with ClipForge AI (https://clipforgeai.online)',
           hook: 'The AI moment that changed everything...',
         }}
+      />
+
+      {/* Google Sign In & Channel Authorization Modal */}
+      <YouTubeConnectModal
+        open={connectModalOpen}
+        onClose={() => setConnectModalOpen(false)}
+        onSuccess={() => setYtModalOpen(true)}
       />
     </div>
   )
