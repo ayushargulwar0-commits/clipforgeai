@@ -23,22 +23,28 @@ import {
   Layers,
   Radio,
   LogOut,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react'
 
 interface ScheduledItem {
   id: string
+  clip_id?: string
+  file_path?: string
   title: string
   platform: 'instagram' | 'tiktok' | 'youtube'
   date: string
   time: string
-  status: 'draft' | 'scheduled' | 'published'
+  status: 'draft' | 'scheduled' | 'uploading' | 'published' | 'failed'
   caption: string
   youtube_url?: string
+  error?: string | null
 }
 
 const INITIAL_SCHEDULE: ScheduledItem[] = [
   {
     id: 's-1',
+    clip_id: 'clip_test_render_rendered',
     title: 'The Hardest Truth About Scaling past $10M #Shorts',
     platform: 'youtube',
     date: '2026-11-04',
@@ -49,6 +55,7 @@ const INITIAL_SCHEDULE: ScheduledItem[] = [
   },
   {
     id: 's-2',
+    clip_id: 'clip_test_render_rendered',
     title: 'Microservices vs Monolith debate',
     platform: 'youtube',
     date: '2026-11-05',
@@ -59,6 +66,7 @@ const INITIAL_SCHEDULE: ScheduledItem[] = [
   },
   {
     id: 's-3',
+    clip_id: 'clip_test_render_rendered',
     title: '3-Second Retention Framework',
     platform: 'tiktok',
     date: '2026-11-03',
@@ -69,60 +77,116 @@ const INITIAL_SCHEDULE: ScheduledItem[] = [
 ]
 
 export default function Scheduler() {
-  const { success, error: toastError } = useToast()
-  const { channel, scheduledList, uploadNow, disconnectAccount, loading: ytLoading } = useYouTubeStore()
+  const { success, error: toastError, info } = useToast()
+  const {
+    channel,
+    scheduledList,
+    uploadNow,
+    scheduleUpload,
+    disconnectAccount,
+    fetchScheduled,
+    runSchedulerNow,
+    loading: ytLoading,
+  } = useYouTubeStore()
 
   const [items, setItems] = useState<ScheduledItem[]>(INITIAL_SCHEDULE)
   const [modalOpen, setModalOpen] = useState(false)
   const [ytModalOpen, setYtModalOpen] = useState(false)
   const [connectModalOpen, setConnectModalOpen] = useState(false)
   const [publishingId, setPublishingId] = useState<string | null>(null)
+  const [isCheckingScheduler, setIsCheckingScheduler] = useState(false)
 
   const [title, setTitle] = useState('')
+  const [selectedClipId, setSelectedClipId] = useState('clip_test_render_rendered')
   const [platform, setPlatform] = useState<'instagram' | 'tiktok' | 'youtube'>('youtube')
-  const [date, setDate] = useState('2026-11-06')
-  const [time, setTime] = useState('18:00')
+  const [date, setDate] = useState(() => {
+    const d = new Date()
+    return d.toISOString().split('T')[0]
+  })
+  const [time, setTime] = useState(() => {
+    const d = new Date()
+    d.setMinutes(d.getMinutes() + 5)
+    return d.toTimeString().slice(0, 5)
+  })
   const [caption, setCaption] = useState('')
 
-  // Sync YouTube store scheduled uploads
+  // Available clips from local storage
+  const [availableClips, setAvailableClips] = useState<{ id: string; title: string }[]>([
+    { id: 'clip_test_render_rendered', title: '1080p Rendered 9:16 Short (Ready on server)' },
+    { id: 'clip_yt-clip-1793646981407-1_rendered', title: 'Viral AI Extracted Highlight #1' },
+    { id: 'outro_clipforge_9x16', title: 'ClipForge Outro Reel (1080x1920)' },
+  ])
+
+  // Load clips from user storage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('cf_user_clips')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const userClips = parsed.map((c: any) => ({
+            id: c.id,
+            title: c.title || `Clip #${c.id}`,
+          }))
+          setAvailableClips((prev) => [...userClips, ...prev])
+        }
+      }
+    } catch (_) {}
+  }, [])
+
+  // Poll scheduled list on mount and periodically every 20 seconds
+  useEffect(() => {
+    fetchScheduled()
+    const timer = setInterval(() => {
+      fetchScheduled()
+    }, 20000)
+    return () => clearInterval(timer)
+  }, [fetchScheduled])
+
+  // Sync scheduledList from backend store
   useEffect(() => {
     if (scheduledList && scheduledList.length > 0) {
       const mapped: ScheduledItem[] = scheduledList.map((s) => ({
         id: s.id,
+        clip_id: s.clip_id || 'clip_test_render_rendered',
         title: s.title,
         platform: 'youtube',
         date: s.scheduled_at.split('T')[0],
         time: s.scheduled_at.split('T')[1]?.slice(0, 5) || '18:00',
         status: (s.status as any) || 'scheduled',
         caption: s.description,
-        youtube_url: s.youtube_url || 'https://studio.youtube.com',
+        youtube_url: s.youtube_url || s.studio_url || 'https://studio.youtube.com',
+        error: s.error,
       }))
-      // Merge unique
+
       setItems((prev) => {
-        const ids = new Set(prev.map((p) => p.id))
-        const added = mapped.filter((m) => !ids.has(m.id))
-        return [...added, ...prev]
+        const ids = new Set(mapped.map((m) => m.id))
+        const remaining = prev.filter((p) => !ids.has(p.id))
+        return [...mapped, ...remaining]
       })
     }
   }, [scheduledList])
 
-  const handleSchedule = (e: React.FormEvent) => {
+  const handleSchedule = async (e: React.FormEvent) => {
     e.preventDefault()
-    const newItem: ScheduledItem = {
-      id: 's-' + Date.now(),
-      title,
-      platform,
-      date,
-      time,
-      status: 'scheduled',
-      caption,
-      youtube_url: 'https://studio.youtube.com',
+    const targetDateTime = `${date}T${time}:00`
+
+    try {
+      await scheduleUpload({
+        clipId: selectedClipId,
+        title,
+        description: caption,
+        privacy: 'public',
+        scheduledAt: targetDateTime,
+      })
+
+      success('Post Scheduled', `Video queued for ${date} at ${time}. The background worker will auto-publish it at that time.`)
+      setTitle('')
+      setCaption('')
+      setModalOpen(false)
+    } catch (err: any) {
+      toastError('Schedule Failed', err?.message || 'Could not queue post.')
     }
-    setItems([newItem, ...items])
-    success('Post Scheduled', `Video queued for ${date} at ${time} on ${platform.toUpperCase()}.`)
-    setTitle('')
-    setCaption('')
-    setModalOpen(false)
   }
 
   const handleInstantUpload = async (item: ScheduledItem) => {
@@ -130,26 +194,58 @@ export default function Scheduler() {
       setConnectModalOpen(true)
       return
     }
+
     setPublishingId(item.id)
+    // Mark as uploading immediately
+    setItems((prev) =>
+      prev.map((i) => (i.id === item.id ? { ...i, status: 'uploading', error: null } : i))
+    )
+
     try {
       const res = await uploadNow({
-        clipId: item.id,
+        clipId: item.clip_id || 'clip_test_render_rendered',
         title: item.title,
         description: item.caption,
         privacy: 'public',
       })
+
       if (res.success) {
         setItems((prev) =>
           prev.map((i) =>
-            i.id === item.id ? { ...i, status: 'published', youtube_url: res.youtube_url } : i
+            i.id === item.id
+              ? { ...i, status: 'published', youtube_url: res.youtube_url, error: null }
+              : i
           )
         )
-        success('Queued to YouTube Studio!', `"${item.title}" has been sent to your YouTube upload queue!`)
+        success('Published to YouTube!', `"${item.title}" uploaded! Click "Watch" to view.`)
       }
     } catch (err: any) {
-      toastError('Upload Failed', err?.message || 'Could not push upload to YouTube.')
+      const errorMsg = err?.message || 'Could not push upload to YouTube.'
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === item.id ? { ...i, status: 'failed', error: errorMsg } : i
+        )
+      )
+      toastError('Upload Failed', errorMsg)
     } finally {
       setPublishingId(null)
+    }
+  }
+
+  const handleTriggerSchedulerCheck = async () => {
+    setIsCheckingScheduler(true)
+    try {
+      const res = await runSchedulerNow()
+      info(
+        'Worker Checked',
+        res.processed_count > 0
+          ? `Uploaded ${res.processed_count} due scheduled post(s)!`
+          : 'Scheduler worker checked: No pending posts were due yet.'
+      )
+    } catch (err: any) {
+      toastError('Worker Error', err?.message || 'Could not execute background scheduler.')
+    } finally {
+      setIsCheckingScheduler(false)
     }
   }
 
@@ -160,10 +256,21 @@ export default function Scheduler() {
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Content Scheduler & YouTube Auto-Publisher</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Schedule releases or directly auto-publish AI-generated short videos to YouTube Shorts, TikTok, and Instagram.
+            Automated worker runs every 30 seconds to upload due vertical 9:16 Shorts to YouTube.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleTriggerSchedulerCheck}
+            loading={isCheckingScheduler}
+            className="text-xs gap-1.5 border-surface-border text-slate-300 hover:text-white"
+            title="Check and auto-upload any posts scheduled for right now"
+          >
+            <RefreshCw size={13} className={isCheckingScheduler ? 'animate-spin' : ''} /> Check Due Posts
+          </Button>
+
           <Button
             onClick={() => {
               if (!channel.connected) setConnectModalOpen(true)
@@ -171,8 +278,9 @@ export default function Scheduler() {
             }}
             className="gap-2 text-xs font-bold bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-lg shadow-red-600/25"
           >
-            <Youtube size={16} /> YouTube Auto-Publisher
+            <Youtube size={16} /> Quick Upload to Shorts
           </Button>
+
           <Button onClick={() => setModalOpen(true)} variant="outline" className="gap-2 text-xs font-semibold">
             <Plus size={16} /> Schedule Post
           </Button>
@@ -202,7 +310,7 @@ export default function Scheduler() {
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               {channel.connected
-                ? `Authorized as ${channel.channelEmail || 'Google Account'} • Direct 1-Click Upload & Scheduling active.`
+                ? `Authorized as ${channel.channelEmail || 'Google Account'} • Background worker active.`
                 : 'Sign in with your YouTube account to link channel and push AI-generated clips directly to YouTube Shorts.'}
             </p>
           </div>
@@ -268,18 +376,39 @@ export default function Scheduler() {
                   {item.platform === 'youtube' && <Youtube size={12} className="text-red-400" />}
                   {item.platform}
                 </span>
-                <Badge variant={item.status === 'published' ? 'success' : 'brand'}>
+
+                <Badge
+                  variant={
+                    item.status === 'published'
+                      ? 'success'
+                      : item.status === 'uploading'
+                      ? 'warning'
+                      : item.status === 'failed'
+                      ? 'danger'
+                      : 'brand'
+                  }
+                  className="capitalize font-mono text-[10px]"
+                >
                   {item.status}
                 </Badge>
               </div>
+
               <h3 className="text-sm font-bold text-white mb-2">{item.title}</h3>
-              <p className="text-xs text-slate-400 line-clamp-3 mb-4 bg-surface p-2.5 rounded-lg border border-surface-border/50">
+              <p className="text-xs text-slate-400 line-clamp-3 mb-3 bg-surface p-2.5 rounded-lg border border-surface-border/50">
                 {item.caption}
               </p>
+
+              {/* Exact Error Message Banner if Failed */}
+              {item.status === 'failed' && item.error && (
+                <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-[11px] mb-3 flex items-start gap-1.5">
+                  <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                  <span className="line-clamp-2">{item.error}</span>
+                </div>
+              )}
             </div>
 
             <div className="pt-3 border-t border-surface-border flex items-center justify-between text-xs text-slate-400">
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 font-mono text-[11px]">
                 <Clock size={12} /> {item.date} • {item.time}
               </span>
 
@@ -289,19 +418,19 @@ export default function Scheduler() {
                     href={item.youtube_url || 'https://studio.youtube.com'}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 transition"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-600/20 border border-red-500/30 text-red-300 hover:bg-red-600/30 transition shadow"
                   >
-                    <Youtube size={12} /> YouTube Studio <ExternalLink size={10} />
+                    <Youtube size={12} /> Watch <ExternalLink size={10} />
                   </a>
-                ) : item.platform === 'youtube' && item.status !== 'published' ? (
+                ) : item.platform === 'youtube' ? (
                   <Button
                     variant="brand"
                     size="xs"
-                    loading={publishingId === item.id}
+                    loading={publishingId === item.id || item.status === 'uploading'}
                     onClick={() => handleInstantUpload(item)}
                     className="gap-1 text-[11px] bg-red-600 hover:bg-red-500 text-white font-bold"
                   >
-                    <Send size={11} /> Upload Now
+                    <Send size={11} /> {item.status === 'failed' ? 'Retry Upload' : 'Upload Now'}
                   </Button>
                 ) : (
                   <Button
@@ -323,16 +452,31 @@ export default function Scheduler() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title="Schedule Social Post"
-        description="Select video, destination platform, date, and draft captions."
+        description="Select video clip, destination platform, date, and draft captions."
       >
         <form onSubmit={handleSchedule} className="p-6 space-y-4">
           <Input
-            label="Post Title / Clip"
-            placeholder="e.g. Episode 42 Viral Highlight"
+            label="Post Title / Clip Hook"
+            placeholder="e.g. Episode 42 Viral Highlight #Shorts"
             required
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-300">Select Rendered Video Clip</label>
+            <select
+              value={selectedClipId}
+              onChange={(e) => setSelectedClipId(e.target.value)}
+              className="w-full bg-surface border border-surface-border text-xs text-white rounded-xl px-3 py-2.5 focus:border-brand-500 outline-none"
+            >
+              {availableClips.map((c) => (
+                <option key={c.id} value={c.id} className="bg-bg text-white">
+                  {c.title}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-300">Target Platform</label>
@@ -367,7 +511,7 @@ export default function Scheduler() {
               onChange={(e) => setDate(e.target.value)}
             />
             <Input
-              label="Time"
+              label="Time (Local)"
               type="time"
               required
               value={time}
@@ -392,12 +536,12 @@ export default function Scheduler() {
         </form>
       </Modal>
 
-      {/* Dedicated YouTube Publish & Schedule Modal */}
+      {/* Dedicated YouTube Publish & Schedule Modal (Pre-linked to real 1080p rendered clip) */}
       <YouTubePublishModal
         open={ytModalOpen}
         onClose={() => setYtModalOpen(false)}
         clip={{
-          id: 'clip-direct-1',
+          id: 'clip_test_render_rendered',
           title: 'Top AI Viral Moments #Shorts',
           description: 'Auto-cut and formatted with ClipForge AI (https://clipforgeai.online)',
           hook: 'The AI moment that changed everything...',

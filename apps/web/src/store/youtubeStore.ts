@@ -24,6 +24,8 @@ export interface ScheduledUpload {
   timezone?: string
   status: 'scheduled' | 'uploading' | 'published' | 'failed'
   youtube_url?: string
+  studio_url?: string
+  error?: string | null
   created_at: string
 }
 
@@ -56,6 +58,7 @@ interface YouTubeState {
     timezone?: string
   }) => Promise<{ success: boolean; schedule_id?: string; message?: string }>
   fetchScheduled: () => Promise<void>
+  runSchedulerNow: () => Promise<any>
 }
 
 export const useYouTubeStore = create<YouTubeState>()(
@@ -66,12 +69,12 @@ export const useYouTubeStore = create<YouTubeState>()(
       },
       scheduledList: [
         {
-          id: 'yt-sched-1',
-          clip_id: 'clip-1',
+          id: 'yt-sched-demo-1',
+          clip_id: 'clip_test_render_rendered',
           title: 'The Hardest Truth About Scaling past $10M #Shorts',
-          description: 'Key insights extracted and edited automatically with ClipForge AI (https://clipforgeai.online). #startup #founder',
+          description: 'Key insights extracted and edited automatically with ClipForge AI (https://clipforgeai.online). #shorts #founder',
           privacy: 'public',
-          scheduled_at: '2026-11-05T18:00:00Z',
+          scheduled_at: '2026-11-04T18:00:00Z',
           timezone: 'UTC',
           status: 'scheduled',
           youtube_url: 'https://studio.youtube.com',
@@ -89,7 +92,9 @@ export const useYouTubeStore = create<YouTubeState>()(
                 ...state.channel,
                 connected: true,
                 channelName: res.data.channel_name || state.channel.channelName,
+                channelEmail: res.data.channel_email || state.channel.channelEmail,
                 channelId: res.data.channel_id || state.channel.channelId,
+                channelHandle: res.data.channel_handle || state.channel.channelHandle,
                 subscriberCount: res.data.subscriber_count || state.channel.subscriberCount,
                 connectedAt: res.data.connected_at || state.channel.connectedAt,
               },
@@ -108,7 +113,7 @@ export const useYouTubeStore = create<YouTubeState>()(
         const cSubs = info?.subscriberCount || 'Creator Channel'
 
         try {
-          const res = await api.post('/youtube/connect')
+          const res = await api.post(`/youtube/connect?channel_name=${encodeURIComponent(cName)}&channel_email=${encodeURIComponent(cEmail)}&channel_handle=${encodeURIComponent(cHandle)}`)
           if (res.data && res.data.success) {
             set({
               channel: {
@@ -168,12 +173,6 @@ export const useYouTubeStore = create<YouTubeState>()(
       },
 
       uploadNow: async (params) => {
-        const state = get()
-        const channelHandle = state.channel.channelHandle || ''
-        const channelUrl = channelHandle
-          ? `https://www.youtube.com/${channelHandle.replace(/^@/, '@')}`
-          : 'https://studio.youtube.com'
-
         try {
           const res = await api.post('/youtube/upload', {
             clip_id: params.clipId,
@@ -184,43 +183,20 @@ export const useYouTubeStore = create<YouTubeState>()(
           })
           return {
             success: true,
-            youtube_url: channelUrl,
-            studio_url: 'https://studio.youtube.com',
-            message: res.data?.message || 'Video successfully uploaded to your YouTube Studio Shorts queue!',
+            youtube_url: res.data?.shorts_url || res.data?.youtube_url || 'https://studio.youtube.com',
+            studio_url: res.data?.studio_url || 'https://studio.youtube.com',
+            message: res.data?.message || 'Video successfully uploaded to YouTube Shorts!',
           }
         } catch (err: any) {
-          return {
-            success: true,
-            youtube_url: channelUrl,
-            studio_url: 'https://studio.youtube.com',
-            message: 'Video successfully pushed to your YouTube Channel Shorts queue!',
-          }
+          const errorMsg = err.response?.data?.detail || err.message || 'YouTube upload failed'
+          console.error('[YouTube Upload Failed]', errorMsg)
+          throw new Error(errorMsg)
         }
       },
 
       scheduleUpload: async (params) => {
-        const state = get()
-        const channelHandle = state.channel.channelHandle || ''
-        const channelUrl = channelHandle
-          ? `https://www.youtube.com/${channelHandle.replace(/^@/, '@')}`
-          : 'https://studio.youtube.com'
-
-        const newSched: ScheduledUpload = {
-          id: `sched-${Date.now()}`,
-          clip_id: params.clipId,
-          title: params.title,
-          description: params.description || '',
-          tags: params.tags || ['#shorts'],
-          privacy: params.privacy || 'public',
-          scheduled_at: params.scheduledAt,
-          timezone: params.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-          status: 'scheduled',
-          youtube_url: channelUrl,
-          created_at: new Date().toISOString(),
-        }
-
         try {
-          await api.post('/youtube/schedule', {
+          const res = await api.post('/youtube/schedule', {
             clip_id: params.clipId,
             title: params.title,
             description: params.description || '',
@@ -229,29 +205,43 @@ export const useYouTubeStore = create<YouTubeState>()(
             scheduled_at: params.scheduledAt,
             timezone: params.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
           })
-        } catch {
-          // fallback
-        }
 
-        set((state) => ({
-          scheduledList: [newSched, ...state.scheduledList],
-        }))
+          const item = res.data
+          set((state) => ({
+            scheduledList: [item, ...state.scheduledList.filter((s) => s.id !== item.id)],
+          }))
 
-        return {
-          success: true,
-          schedule_id: newSched.id,
-          message: `Video successfully scheduled for ${new Date(params.scheduledAt).toLocaleString()}`,
+          return {
+            success: true,
+            schedule_id: item.id || `sched-${Date.now()}`,
+            message: `Video successfully scheduled for ${new Date(params.scheduledAt).toLocaleString()}`,
+          }
+        } catch (err: any) {
+          const errorMsg = err.response?.data?.detail || err.message || 'Scheduling failed'
+          console.error('[Scheduling Error]', errorMsg)
+          throw new Error(errorMsg)
         }
       },
 
       fetchScheduled: async () => {
         try {
           const res = await api.get('/youtube/scheduled')
-          if (res.data?.items && res.data.items.length > 0) {
+          if (res.data?.items && Array.isArray(res.data.items)) {
             set({ scheduledList: res.data.items })
           }
         } catch {
           // keep existing
+        }
+      },
+
+      runSchedulerNow: async () => {
+        try {
+          const res = await api.post('/youtube/scheduler/run-now')
+          await get().fetchScheduled()
+          return res.data
+        } catch (err: any) {
+          console.error('[Scheduler Run Error]', err)
+          throw err
         }
       },
     }),

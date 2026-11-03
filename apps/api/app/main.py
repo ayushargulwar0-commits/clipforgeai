@@ -72,11 +72,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await runner.start()
     logger.info("Job runner started")
 
+    # Start YouTube automated scheduler worker
+    from app.services.youtube_scheduler import get_youtube_scheduler
+    yt_scheduler = get_youtube_scheduler()
+    await yt_scheduler.start()
+    logger.info("YouTube Scheduler Worker started")
+
     yield  # ← application serves requests here
 
     # Shutdown
+    await yt_scheduler.stop()
     await runner.stop()
-    logger.info("Job runner stopped")
+    logger.info("Job runner and YouTube scheduler stopped")
     logger.info("ClipForge API shutdown complete")
 
 

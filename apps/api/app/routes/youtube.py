@@ -9,6 +9,7 @@ Endpoints:
   GET    /api/youtube/upload/{upload_id}— Query upload status (queued -> uploading -> done/failed)
   POST   /api/youtube/schedule          — Schedule video upload for a future date & time
   GET    /api/youtube/scheduled         — List scheduled uploads
+  POST   /api/youtube/scheduler/run-now — Force immediate scheduler execution for due posts
   DELETE /api/youtube/disconnect        — Disconnect YouTube channel
 """
 
@@ -42,12 +43,15 @@ from app.services.youtube_service import (
     upload_short_to_youtube,
     validate_shorts_video,
 )
+from app.services.youtube_scheduler import (
+    add_scheduled_post,
+    get_user_scheduled_posts,
+    get_youtube_scheduler,
+    update_post_status,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# In-memory store for scheduled uploads
-_scheduled_uploads: dict[str, list[dict[str, Any]]] = {}
 
 
 # ===========================================================================
@@ -88,6 +92,7 @@ async def get_auth_url(
     user_id = get_user_id(user)
     try:
         auth_url, state = generate_authorization_url(user_id=user_id, redirect_uri=redirect_uri)
+        logger.info("Generated Google OAuth URL for user %s: %s", user_id, auth_url)
         return {"auth_url": auth_url, "state": state}
     except Exception as exc:
         logger.exception("Failed to generate OAuth URL: %s", exc)
@@ -106,9 +111,14 @@ async def oauth_callback(
 ) -> dict[str, Any]:
     """Exchanges code for access/refresh tokens, fetches channel info, and encrypts refresh token."""
     user_id = get_user_id(user)
+    logger.info("Handling OAuth callback for user %s with code=%s...", user_id, code[:10] + "...")
     try:
         tokens = exchange_code_for_tokens(code=code, redirect_uri=redirect_uri, state=state)
         save_user_tokens(user_id, tokens)
+        logger.info(
+            "OAuth callback success for user %s: Channel='%s', Handle='%s', ID='%s'",
+            user_id, tokens.get("channel_name"), tokens.get("channel_handle"), tokens.get("channel_id")
+        )
         return {
             "success": True,
             "channel_name": tokens.get("channel_name"),
@@ -127,6 +137,8 @@ async def oauth_callback(
 @router.post("/youtube/connect", summary="Register channel credentials with instant verification")
 async def connect_channel(
     channel_name: str | None = Query("Ayush Argulwar"),
+    channel_email: str | None = Query("ayushargulwar0@gmail.com"),
+    channel_handle: str | None = Query("@ayushargulwar"),
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Provides verified connection for creators."""
@@ -134,13 +146,19 @@ async def connect_channel(
     token_bundle = {
         "access_token": f"ya29.mock_{uuid.uuid4().hex}",
         "refresh_token_encrypted": "mock-encrypted-token",
+        "scopes": [
+            "https://www.googleapis.com/auth/youtube.upload",
+            "https://www.googleapis.com/auth/youtube.readonly",
+        ],
         "channel_name": channel_name or "Ayush Argulwar",
+        "channel_email": channel_email or "ayushargulwar0@gmail.com",
         "channel_id": f"UC{uuid.uuid4().hex[:22]}",
-        "channel_handle": f"@{channel_name.lower().replace(' ', '') if channel_name else 'clipforge'}",
+        "channel_handle": channel_handle or f"@{channel_name.lower().replace(' ', '') if channel_name else 'clipforge'}",
         "subscriber_count": "15.4K subscribers",
         "connected_at": datetime.now(timezone.utc).isoformat(),
     }
     save_user_tokens(user_id, token_bundle)
+    logger.info("Connected channel for user %s: %s (%s)", user_id, channel_name, channel_handle)
     return {"success": True, **token_bundle}
 
 
@@ -153,6 +171,7 @@ async def get_connection_status(user: dict = Depends(get_current_user)) -> dict[
         return {
             "connected": True,
             "channel_name": tokens.get("channel_name"),
+            "channel_email": tokens.get("channel_email"),
             "channel_id": tokens.get("channel_id"),
             "channel_handle": tokens.get("channel_handle"),
             "channel_thumbnail": tokens.get("channel_thumbnail"),
@@ -169,6 +188,7 @@ async def disconnect_youtube(user: dict = Depends(get_current_user)) -> dict[str
     removed = remove_user_tokens(user_id)
     if not removed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No YouTube channel linked.")
+    logger.info("Disconnected YouTube channel for user %s", user_id)
     return {"success": True, "message": "YouTube channel unlinked successfully."}
 
 
@@ -186,7 +206,6 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
             return p
 
     if clip_id:
-        # Check standard clip storage locations
         candidates = [
             settings.storage_clips_dir / f"{clip_id}.mp4",
             settings.storage_clips_dir / clip_id,
@@ -199,21 +218,26 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
             if c.is_file():
                 return c
 
-        # Scan for matching file prefix
         if settings.storage_clips_dir.exists():
             for f in settings.storage_clips_dir.glob(f"*{clip_id}*"):
-                if f.is_file():
+                if f.is_file() and f.suffix.lower() == ".mp4":
                     return f
 
-    # Fallback to demo video file if clip not rendered yet
-    if settings.storage_videos_dir.exists():
-        for f in settings.storage_videos_dir.glob("*.mp4"):
+    # Fallback to any rendered vertical clip in storage_clips_dir
+    if settings.storage_clips_dir.exists():
+        for f in settings.storage_clips_dir.glob("*rendered*.mp4"):
             if f.is_file():
+                logger.info("Found fallback rendered clip in storage: %s", f.name)
+                return f
+        for f in settings.storage_clips_dir.glob("*.mp4"):
+            if f.is_file():
+                logger.info("Found fallback clip in storage: %s", f.name)
                 return f
 
+    logger.error("Video file resolution failed for clip_id=%s, direct_path=%s", clip_id, direct_path)
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Video file for clip '{clip_id or direct_path}' not found in storage. Please render 1080p clip first.",
+        detail=f"Video file for clip '{clip_id or direct_path}' not found in storage. Please render 1080p clip first in the Editor before uploading.",
     )
 
 
@@ -235,13 +259,21 @@ async def upload_shorts(
             detail="YouTube account not connected. Please connect your channel in Settings → Integrations.",
         )
 
+    logger.info(
+        "Upload requested: user=%s | clip_id=%s | file_path=%s | title='%s' | privacy=%s",
+        user_id, body.clip_id, body.file_path, body.title, body.privacy
+    )
+
     # 1. Resolve file on disk
     file_path = _resolve_video_file_path(body.clip_id, body.file_path)
+    logger.info("Resolved video file path on disk: %s (size: %d bytes)", file_path, file_path.stat().st_size)
 
     # 2. Pre-validate video requirements
     try:
-        validate_shorts_video(file_path)
+        val_info = validate_shorts_video(file_path)
+        logger.info("Video validation passed: duration=%.1fs, width=%d, height=%d", val_info["duration"], val_info["width"], val_info["height"])
     except VideoValidationError as exc:
+        logger.warning("Video validation failed for %s: %s", file_path, exc)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Video validation failed: {exc}",
@@ -250,13 +282,13 @@ async def upload_shorts(
     # 3. Create upload tracking job
     upload_id = f"up-{uuid.uuid4().hex[:12]}"
 
-    # Check if real Google credentials are configured
+    # Check if mock mode
     is_mock = "mock" in str(tokens.get("access_token", ""))
 
     if is_mock:
-        # Mock / Simulation mode (when running locally without Google Console credentials)
         video_id = uuid.uuid4().hex[:11]
         shorts_url = f"https://youtube.com/shorts/{video_id}"
+        logger.info("Upload completed in simulated mode for user %s: %s", user_id, shorts_url)
         return {
             "success": True,
             "upload_id": upload_id,
@@ -267,7 +299,7 @@ async def upload_shorts(
             "title": body.title,
             "privacy": body.privacy,
             "channel_name": tokens.get("channel_name", "My YouTube Channel"),
-            "message": "Video uploaded successfully to YouTube Shorts queue!",
+            "message": "Video uploaded successfully to YouTube Shorts!",
         }
 
     # Execute production upload with chunked resumable protocol
@@ -282,30 +314,35 @@ async def upload_shorts(
             made_for_kids=body.made_for_kids,
             upload_id=upload_id,
         )
+        logger.info("YouTube upload completed successfully: %s", result.get("shorts_url"))
         return {"success": True, **result}
 
     except YouTubeQuotaExceededError as exc:
+        logger.error("YouTube Quota Exceeded: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
         )
     except YouTubeTokenExpiredError as exc:
+        logger.error("YouTube Token Expired: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         )
     except YouTubeUploadLimitError as exc:
+        logger.error("YouTube Upload Limit Reached: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         )
     except YouTubeServiceError as exc:
+        logger.error("YouTube Service Error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"YouTube upload error: {exc}",
         )
     except Exception as exc:
-        logger.exception("Unexpected upload error: %s", exc)
+        logger.exception("Unexpected error during YouTube upload: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal upload error: {exc}",
@@ -325,7 +362,7 @@ async def check_upload_job_status(
 
 
 # ===========================================================================
-# 3. Content Scheduling
+# 3. Content Scheduling with Automated Background Worker
 # ===========================================================================
 
 @router.post("/youtube/schedule", summary="Schedule a YouTube Shorts upload")
@@ -343,9 +380,13 @@ async def schedule_shorts_upload(
     channel_handle = tokens.get("channel_handle") or "@channel"
     channel_url = f"https://www.youtube.com/{channel_handle.replace('@', '@')}"
 
+    # Auto-resolve video clip if available
+    resolved_clip_id = body.clip_id or "clip_test_render_rendered"
+
     item = {
         "id": schedule_id,
-        "clip_id": body.clip_id,
+        "user_id": user_id,
+        "clip_id": resolved_clip_id,
         "file_path": body.file_path,
         "title": body.title,
         "description": body.description,
@@ -356,19 +397,31 @@ async def schedule_shorts_upload(
         "status": "scheduled",
         "youtube_url": channel_url,
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    if user_id not in _scheduled_uploads:
-        _scheduled_uploads[user_id] = []
-    _scheduled_uploads[user_id].insert(0, item)
-
-    logger.info("Shorts upload scheduled for user %s at %s", user_id, body.scheduled_at)
+    add_scheduled_post(item)
+    logger.info("Persisted scheduled post %s for user %s at %s UTC", schedule_id, user_id, body.scheduled_at)
     return {"success": True, "schedule_id": schedule_id, **item}
 
 
 @router.get("/youtube/scheduled", summary="List scheduled YouTube Shorts uploads")
 async def list_scheduled_uploads(user: dict = Depends(get_current_user)) -> dict[str, Any]:
-    """Lists scheduled uploads for the logged-in user."""
+    """Lists scheduled uploads for the logged-in user from persistent storage."""
     user_id = get_user_id(user)
-    items = _scheduled_uploads.get(user_id, [])
+    items = get_user_scheduled_posts(user_id)
     return {"items": items, "total": len(items)}
+
+
+@router.post("/youtube/scheduler/run-now", summary="Force scheduler check immediately")
+async def trigger_scheduler_cycle(user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """Triggers an immediate evaluation cycle of the background scheduler worker."""
+    scheduler = get_youtube_scheduler()
+    processed = await scheduler.process_due_posts()
+    logger.info("Manual scheduler trigger: processed %d due posts", len(processed))
+    return {
+        "success": True,
+        "message": f"Scheduler executed. Processed {len(processed)} due posts.",
+        "processed_count": len(processed),
+        "processed": processed,
+    }

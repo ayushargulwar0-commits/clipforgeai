@@ -160,20 +160,32 @@ class Settings(BaseSettings):
         return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
     @property
+    def storage_resolved_dir(self) -> Path:
+        # Check apps/api/storage relative to codebase first
+        api_storage = Path(__file__).resolve().parent.parent.parent / "storage"
+        if api_storage.exists():
+            return api_storage.resolve()
+        if self.STORAGE_DIR.is_absolute() and self.STORAGE_DIR.exists():
+            return self.STORAGE_DIR
+        if (Path.cwd() / self.STORAGE_DIR).exists():
+            return (Path.cwd() / self.STORAGE_DIR).resolve()
+        return api_storage.resolve()
+
+    @property
     def storage_videos_dir(self) -> Path:
-        return self.STORAGE_DIR / "videos"
+        return self.storage_resolved_dir / "videos"
 
     @property
     def storage_clips_dir(self) -> Path:
-        return self.STORAGE_DIR / "clips"
+        return self.storage_resolved_dir / "clips"
 
     @property
     def storage_thumbnails_dir(self) -> Path:
-        return self.STORAGE_DIR / "thumbnails"
+        return self.storage_resolved_dir / "thumbnails"
 
     @property
     def storage_audio_dir(self) -> Path:
-        return self.STORAGE_DIR / "audio"
+        return self.storage_resolved_dir / "audio"
 
 
 @lru_cache(maxsize=1)

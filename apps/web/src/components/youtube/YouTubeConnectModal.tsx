@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/hooks/useAuth'
 import { useYouTubeStore } from '@/store/youtubeStore'
 import { Youtube } from '@/components/ui/Icons'
+import api from '@/lib/api'
 import {
   CheckCircle2,
   ShieldCheck,
@@ -44,26 +45,34 @@ export function YouTubeConnectModal({ open, onClose, onSuccess }: YouTubeConnect
 
     setStep('authorizing')
 
-    // Simulate real OAuth authorization handshake delay
-    setTimeout(async () => {
-      try {
-        await connectAccount({
-          channelName,
-          channelEmail,
-          channelHandle,
-        })
-        setStep('success')
-        success('YouTube Channel Connected!', `"${channelName}" has been authorized for automatic uploads.`)
-        setTimeout(() => {
-          setStep('form')
-          onClose()
-          if (onSuccess) onSuccess()
-        }, 1500)
-      } catch (err: any) {
+    try {
+      await connectAccount({
+        channelName,
+        channelEmail,
+        channelHandle,
+      })
+      setStep('success')
+      success('YouTube Channel Connected!', `"${channelName}" has been authorized for automatic uploads.`)
+      setTimeout(() => {
         setStep('form')
-        toastError('Authorization Failed', err?.message || 'Could not authorize YouTube account.')
+        onClose()
+        if (onSuccess) onSuccess()
+      }, 1200)
+    } catch (err: any) {
+      setStep('form')
+      toastError('Authorization Failed', err?.message || 'Could not authorize YouTube account.')
+    }
+  }
+
+  const handleGoogleOAuthRedirect = async () => {
+    try {
+      const res = await api.get('/youtube/auth-url')
+      if (res.data?.auth_url) {
+        window.location.href = res.data.auth_url
       }
-    }, 1200)
+    } catch (err: any) {
+      toastError('OAuth Error', err?.message || 'Could not initialize Google OAuth flow.')
+    }
   }
 
   const handleClose = () => {
@@ -149,6 +158,23 @@ export function YouTubeConnectModal({ open, onClose, onSuccess }: YouTubeConnect
                   Link your YouTube channel to enable automatic video uploads & scheduling.
                 </p>
               </div>
+            </div>
+
+            {/* DIRECT OAUTH REDIRECT BUTTON */}
+            <div className="p-3 rounded-xl bg-surface border border-surface-border flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-white">Official Google Consent Flow</p>
+                <p className="text-[11px] text-slate-400">Launch Google account picker directly</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={handleGoogleOAuthRedirect}
+                className="gap-1.5 text-xs font-semibold"
+              >
+                Launch Google OAuth <ExternalLink size={12} />
+              </Button>
             </div>
 
             {/* CHANNEL ACCOUNT INPUTS */}
