@@ -1,3 +1,4 @@
+import { Youtube } from '@/components/ui/Icons'
 import { useState, useRef, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Card } from '@/components/ui/Card'
@@ -31,6 +32,7 @@ import {
   Globe,
   Share2,
 } from 'lucide-react'
+import { YouTubePublishModal } from '@/components/youtube/YouTubePublishModal'
 import { formatDuration } from '@/lib/utils'
 import api from '@/lib/api'
 
@@ -118,6 +120,7 @@ export default function VideoEditor() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [isExtractingSection, setIsExtractingSection] = useState(false)
   const [isRendering, setIsRendering] = useState(false)
+  const [ytModalOpen, setYtModalOpen] = useState(false)
   const [previewOutro, setPreviewOutro] = useState(false)
 
   // Video element and playback state
@@ -496,6 +499,13 @@ export default function VideoEditor() {
           </Button>
           <Button variant="outline" size="xs" onClick={handleSave} className="gap-1.5">
             <Save size={14} /> Save Config
+          </Button>
+          <Button
+            size="xs"
+            onClick={() => setYtModalOpen(true)}
+            className="gap-1.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-bold shadow-lg shadow-red-600/20"
+          >
+            <Youtube size={14} /> Publish / Schedule Shorts
           </Button>
           <Button
             size="xs"
@@ -1057,6 +1067,20 @@ export default function VideoEditor() {
           />
         </div>
       </div>
+    
+      {/* Dedicated YouTube Publish & Schedule Modal */}
+      <YouTubePublishModal
+        open={ytModalOpen}
+        onClose={() => setYtModalOpen(false)}
+        clip={clipItem ? {
+          id: clipItem.id,
+          title: clipItem.title,
+          hook: clipItem.hook,
+          description: clipItem.description,
+          transcript_text: clipItem.transcript_text,
+          duration: Math.max(1, Math.round(config.endTime - config.startTime)),
+        } : null}
+      />
     </div>
   )
 }

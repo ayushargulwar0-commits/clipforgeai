@@ -28,7 +28,7 @@ from slowapi.util import get_remote_address
 
 from app.core.config import get_settings
 from app.core.database import get_supabase
-from app.routes import admin, clips, health, jobs, projects, usage, videos
+from app.routes import admin, clips, health, jobs, projects, usage, videos, youtube
 from app.workers.job_runner import get_job_runner
 
 logger = logging.getLogger(__name__)
@@ -164,6 +164,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router, prefix="/api", tags=["Jobs"])
     app.include_router(usage.router, prefix="/api", tags=["Usage"])
     app.include_router(admin.router, prefix="/api", tags=["Admin"])
+    app.include_router(youtube.router, prefix="/api", tags=["YouTube"])
 
     # -------------------------------------------------------------------
     # Static files (local storage)

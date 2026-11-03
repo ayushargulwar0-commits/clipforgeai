@@ -1,3 +1,4 @@
+import { Youtube } from '@/components/ui/Icons'
 import { useState, useEffect } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -25,6 +26,7 @@ import {
   Volume2,
   ExternalLink,
 } from 'lucide-react'
+import { YouTubePublishModal } from '@/components/youtube/YouTubePublishModal'
 import { formatDuration } from '@/lib/utils'
 import api from '@/lib/api'
 
@@ -122,6 +124,7 @@ export default function Clips() {
   })
 
   const [selectedClip, setSelectedClip] = useState<ClipItem | null>(null)
+  const [publishClip, setPublishClip] = useState<ClipItem | null>(null)
   const [renderingClipId, setRenderingClipId] = useState<string | null>(null)
   const [detectModalOpen, setDetectModalOpen] = useState(false)
   const [inputUrl, setInputUrl] = useState('')
@@ -445,6 +448,16 @@ export default function Clips() {
                     <Edit3 size={12} /> Edit
                   </Button>
 
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => setPublishClip(clip)}
+                    className="gap-1 text-xs text-red-400 hover:text-red-300 hover:border-red-500/40"
+                    title="Publish or Schedule to YouTube Shorts"
+                  >
+                    <Youtube size={12} /> YouTube
+                  </Button>
+
                   {clip.status === 'rendered' ? (
                     <Button
                       size="xs"
@@ -580,6 +593,17 @@ export default function Clips() {
                 </Button>
                 <Button
                   size="sm"
+                  onClick={() => {
+                    const c = selectedClip
+                    setSelectedClip(null)
+                    setPublishClip(c)
+                  }}
+                  className="gap-1.5 bg-red-600 hover:bg-red-500 text-white font-bold shadow-lg shadow-red-600/20"
+                >
+                  <Youtube size={14} /> Publish to YouTube
+                </Button>
+                <Button
+                  size="sm"
                   onClick={() => handleRender(selectedClip)}
                   className="gap-1.5 shadow-brand"
                 >
@@ -644,6 +668,13 @@ export default function Clips() {
           </div>
         </form>
       </Modal>
+    
+      {/* YouTube Publish & Schedule Modal */}
+      <YouTubePublishModal
+        open={!!publishClip}
+        onClose={() => setPublishClip(null)}
+        clip={publishClip}
+      />
     </div>
   )
 }

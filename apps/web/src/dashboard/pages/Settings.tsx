@@ -1,3 +1,4 @@
+import { Youtube } from '@/components/ui/Icons'
 import { useState } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -5,17 +6,20 @@ import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/hooks/useAuth'
-import { User, Lock, Bell, Key, Shield, CheckCircle2 } from 'lucide-react'
+import { useYouTubeStore } from '@/store/youtubeStore'
+import { User, Lock, Bell, Key, Shield, CheckCircle2, ExternalLink, RefreshCw, Radio } from 'lucide-react'
 
 export default function Settings() {
   const { user, isOwner } = useAuth()
-  const { success } = useToast()
-  const [tab, setTab] = useState<'profile' | 'security' | 'notifications' | 'api'>('profile')
+  const { success, error: toastError } = useToast()
+  const { channel, connectAccount, disconnectAccount, loading: ytLoading } = useYouTubeStore()
+  const [tab, setTab] = useState<'profile' | 'integrations' | 'security' | 'notifications' | 'api'>('profile')
 
   const [fullName, setFullName] = useState(user?.user_metadata?.full_name || (isOwner ? 'Ayush Argulwar' : 'Creator User'))
   const [email] = useState(user?.email || (isOwner ? 'ayushargulwar0@gmail.com' : 'creator@example.com'))
   const [currentPass, setCurrentPass] = useState('')
   const [newPass, setNewPass] = useState('')
+  const [customChannel, setCustomChannel] = useState(channel.channelName || 'Ayush Argulwar Shorts')
 
   const handleProfileSave = (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,9 +68,10 @@ export default function Settings() {
 
 
       {/* Tabs */}
-      <div className="flex border-b border-surface-border gap-2">
+      <div className="flex border-b border-surface-border gap-2 overflow-x-auto pb-1">
         {[
           { id: 'profile', label: 'Profile', icon: User },
+          { id: 'integrations', label: 'YouTube & Channels', icon: Youtube },
           { id: 'security', label: 'Security & Password', icon: Lock },
           { id: 'notifications', label: 'Notifications', icon: Bell },
           { id: 'api', label: 'Developer API', icon: Key },
@@ -105,6 +110,139 @@ export default function Settings() {
             </div>
           </form>
         </Card>
+      )}
+
+      {/* Tab 2: YouTube & Channels */}
+      {tab === 'integrations' && (
+        <div className="space-y-6 max-w-3xl">
+          <Card className="p-6 space-y-5">
+            <div className="flex items-center justify-between pb-4 border-b border-surface-border">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-red-600/20 border border-red-500/30 flex items-center justify-center text-red-500 shadow-lg shadow-red-600/10">
+                  <Youtube size={26} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-white">YouTube Integration</h2>
+                    {channel.connected ? (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                        <CheckCircle2 size={10} /> Connected
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface text-slate-400 border border-surface-border">
+                        Not Linked
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Connect your YouTube account to automatically upload or schedule Shorts with AI subtitles.
+                  </p>
+                </div>
+              </div>
+
+              {channel.connected ? (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={async () => {
+                    await disconnectAccount()
+                    success('Disconnected', 'YouTube channel has been unlinked.')
+                  }}
+                  className="text-red-400 hover:text-red-300 hover:border-red-500/50"
+                >
+                  Disconnect
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    await connectAccount(customChannel)
+                    success('YouTube Linked!', `Connected to "${customChannel}" successfully.`)
+                  }}
+                  loading={ytLoading}
+                  className="bg-red-600 hover:bg-red-500 text-white font-bold gap-1.5 shadow-lg shadow-red-600/20"
+                >
+                  <Youtube size={16} /> Connect Account
+                </Button>
+              )}
+            </div>
+
+            {channel.connected ? (
+              <div className="p-4 rounded-xl bg-surface border border-surface-border space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-red-600/30 border border-red-500/40 flex items-center justify-center text-white font-bold text-sm">
+                      YT
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white">{channel.channelName}</p>
+                      <p className="text-xs text-slate-400">
+                        {channel.subscriberCount} • Channel ID: <span className="font-mono text-slate-300">{channel.channelId}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-emerald-400 flex items-center gap-1 font-semibold">
+                    <Radio size={12} className="animate-pulse" /> Direct Uploads Ready
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400 pt-2 border-t border-surface-border/60 flex items-center justify-between">
+                  <span>Linked on: {new Date(channel.connectedAt || Date.now()).toLocaleDateString()}</span>
+                  <span className="text-brand-300">Default Category: 22 (People & Blogs)</span>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-surface border border-surface-border space-y-3">
+                <label className="text-xs font-semibold text-slate-300 block">
+                  YouTube Channel Name or Creator Handle
+                </label>
+                <div className="flex gap-2">
+                  <Input
+                    value={customChannel}
+                    onChange={(e) => setCustomChannel(e.target.value)}
+                    placeholder="e.g. Ayush Argulwar / @clipforge"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      await connectAccount(customChannel)
+                      success('YouTube Connected', `Linked to "${customChannel}"`)
+                    }}
+                    loading={ytLoading}
+                    className="bg-red-600 hover:bg-red-500 text-white shrink-0 font-bold gap-1"
+                  >
+                    <Youtube size={14} /> Link
+                  </Button>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  After linking, clips rendered in ClipForge AI can be published directly as YouTube Shorts or scheduled for peak engagement times.
+                </p>
+              </div>
+            )}
+
+            {/* Publishing Settings */}
+            <div className="pt-2 space-y-3">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider text-slate-400">
+                Automated Upload Defaults
+              </h3>
+              <div className="space-y-2">
+                <label className="flex items-start gap-3 p-3 rounded-xl bg-surface border border-surface-border cursor-pointer">
+                  <input type="checkbox" defaultChecked className="mt-0.5 rounded text-red-600 focus:ring-red-500" />
+                  <div>
+                    <p className="text-xs font-semibold text-white">Append #Shorts to all clip titles</p>
+                    <p className="text-[11px] text-slate-400">Ensures YouTube algorithms index vertical video in the Shorts feed</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 p-3 rounded-xl bg-surface border border-surface-border cursor-pointer">
+                  <input type="checkbox" defaultChecked className="mt-0.5 rounded text-red-600 focus:ring-red-500" />
+                  <div>
+                    <p className="text-xs font-semibold text-white">Include ClipForge AI watermark attribution</p>
+                    <p className="text-[11px] text-slate-400">Includes &ldquo;✂️ Auto-edited by ClipForge AI (https://clipforgeai.online)&rdquo; in video description</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </Card>
+        </div>
       )}
 
       {/* Tab 2: Security */}
