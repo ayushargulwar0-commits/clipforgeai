@@ -190,6 +190,8 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
         candidates = [
             settings.storage_clips_dir / f"{clip_id}.mp4",
             settings.storage_clips_dir / clip_id,
+            settings.storage_clips_dir / f"clip_{clip_id}_rendered.mp4",
+            settings.storage_clips_dir / f"clip_{clip_id}_section.mp4",
             settings.storage_videos_dir / f"{clip_id}.mp4",
             settings.storage_videos_dir / clip_id,
         ]
