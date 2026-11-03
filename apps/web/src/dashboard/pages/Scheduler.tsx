@@ -22,6 +22,7 @@ import {
   ExternalLink,
   Layers,
   Radio,
+  LogOut,
 } from 'lucide-react'
 
 interface ScheduledItem {
@@ -69,7 +70,7 @@ const INITIAL_SCHEDULE: ScheduledItem[] = [
 
 export default function Scheduler() {
   const { success, error: toastError } = useToast()
-  const { channel, scheduledList, uploadNow, loading: ytLoading } = useYouTubeStore()
+  const { channel, scheduledList, uploadNow, disconnectAccount, loading: ytLoading } = useYouTubeStore()
 
   const [items, setItems] = useState<ScheduledItem[]>(INITIAL_SCHEDULE)
   const [modalOpen, setModalOpen] = useState(false)
@@ -209,7 +210,7 @@ export default function Scheduler() {
 
         <div className="flex items-center gap-2 w-full md:w-auto">
           {channel.connected ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
                 onClick={() => setYtModalOpen(true)}
@@ -225,6 +226,18 @@ export default function Scheduler() {
               >
                 YouTube Studio <ExternalLink size={12} />
               </a>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await disconnectAccount()
+                  success('Logged Out', 'You have been disconnected from YouTube.')
+                }}
+                className="text-red-400 hover:text-red-300 hover:bg-red-500/10 border-surface-border hover:border-red-500/40 text-xs font-semibold gap-1.5"
+                title="Log out from your YouTube account"
+              >
+                <LogOut size={13} /> Log Out
+              </Button>
             </div>
           ) : (
             <Button

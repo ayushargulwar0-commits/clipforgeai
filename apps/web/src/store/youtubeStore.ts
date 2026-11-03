@@ -151,9 +151,20 @@ export const useYouTubeStore = create<YouTubeState>()(
           // ignore
         }
         set({
-          channel: { connected: false },
+          channel: {
+            connected: false,
+            channelName: undefined,
+            channelEmail: undefined,
+            channelHandle: undefined,
+            channelId: undefined,
+            subscriberCount: undefined,
+            connectedAt: undefined,
+          },
           loading: false,
         })
+        try {
+          localStorage.removeItem('clipforge-youtube-auth')
+        } catch (_) {}
       },
 
       uploadNow: async (params) => {

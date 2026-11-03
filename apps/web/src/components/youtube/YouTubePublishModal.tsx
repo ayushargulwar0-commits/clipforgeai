@@ -19,6 +19,7 @@ import {
   EyeOff,
   UserCheck,
   AlertCircle,
+  LogOut,
 } from 'lucide-react'
 
 interface YouTubePublishModalProps {
@@ -36,7 +37,7 @@ interface YouTubePublishModalProps {
 
 export function YouTubePublishModal({ open, onClose, clip }: YouTubePublishModalProps) {
   const { success, error: toastError } = useToast()
-  const { channel, uploadNow, scheduleUpload, loading } = useYouTubeStore()
+  const { channel, uploadNow, scheduleUpload, disconnectAccount, loading } = useYouTubeStore()
 
   const [connectModalOpen, setConnectModalOpen] = useState(false)
   const [mode, setMode] = useState<'upload' | 'schedule'>('upload')
@@ -196,9 +197,24 @@ export function YouTubePublishModal({ open, onClose, clip }: YouTubePublishModal
                     <Youtube size={14} /> Sign In & Link Channel
                   </Button>
                 ) : (
-                  <Badge variant="brand" className="text-xs font-mono">
-                    Shorts Ready
-                  </Badge>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant="brand" className="text-xs font-mono">
+                      Shorts Ready
+                    </Badge>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      onClick={async () => {
+                        await disconnectAccount()
+                        success('Logged Out', 'Disconnected from YouTube channel.')
+                      }}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10 gap-1 text-xs"
+                      title="Log out and disconnect YouTube account"
+                    >
+                      <LogOut size={12} /> Log Out
+                    </Button>
+                  </div>
                 )}
               </div>
 

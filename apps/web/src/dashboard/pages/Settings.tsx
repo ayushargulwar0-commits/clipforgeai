@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { useToast } from '@/components/ui/Toast'
 import { useAuth } from '@/hooks/useAuth'
 import { useYouTubeStore } from '@/store/youtubeStore'
-import { User, Lock, Bell, Key, Shield, CheckCircle2, ExternalLink, RefreshCw, Radio } from 'lucide-react'
+import { User, Lock, Bell, Key, Shield, CheckCircle2, ExternalLink, RefreshCw, Radio, LogOut } from 'lucide-react'
 
 export default function Settings() {
   const { user, isOwner } = useAuth()
@@ -152,7 +152,7 @@ export default function Settings() {
                   }}
                   className="text-red-400 hover:text-red-300 hover:border-red-500/50"
                 >
-                  Disconnect
+                  <LogOut size={13} /> Log Out from YouTube
                 </Button>
               ) : (
                 <Button
