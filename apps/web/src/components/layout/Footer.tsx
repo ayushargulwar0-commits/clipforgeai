@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
-import { Zap, Globe, Share2, MessageCircle, FileCode } from 'lucide-react'
+import { Globe, Share2, MessageCircle, FileCode } from 'lucide-react'
+import { BrandLogo } from '@/components/ui/BrandLogo'
 
 const footerLinks = {
   Product: [
@@ -43,15 +44,9 @@ export function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8 lg:gap-12">
           {/* Brand column */}
           <div className="col-span-2 md:col-span-1">
-            <Link to="/" className="flex items-center gap-2.5 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-600 to-accent-500 flex items-center justify-center shadow-brand">
-                <Zap size={18} className="text-white" fill="white" />
-              </div>
-              <span className="font-bold text-base text-white tracking-tight">
-                Clip<span className="gradient-text">Forge</span>
-                <span className="text-slate-400 font-light ml-0.5 text-xs">AI</span>
-              </span>
-            </Link>
+            <div className="mb-4">
+              <BrandLogo size="md" />
+            </div>
             <p className="text-sm text-slate-500 leading-relaxed mb-6">
               Forge viral short-form content from any long video. Powered by open-source AI.
             </p>

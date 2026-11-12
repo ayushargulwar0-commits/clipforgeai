@@ -108,23 +108,29 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         'flex items-center gap-3 px-4 py-5 border-b border-surface-border shrink-0',
         sidebarCollapsed && 'justify-center px-2',
       )}>
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-600 to-accent-500 flex items-center justify-center shrink-0">
-          <Scissors size={16} className="text-white" />
-        </div>
-        <AnimatePresence initial={false}>
-          {!sidebarCollapsed && (
-            <motion.span
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: 'auto' }}
-              exit={{ opacity: 0, width: 0 }}
-              transition={{ duration: 0.2 }}
-              className="font-bold text-white text-lg whitespace-nowrap overflow-hidden"
-            >
-              ClipForge
-              <span className="bg-gradient-to-r from-brand-400 to-accent-400 bg-clip-text text-transparent"> AI</span>
-            </motion.span>
-          )}
-        </AnimatePresence>
+        <Link to="/" className="flex items-center gap-2.5 overflow-hidden">
+          <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 flex items-center justify-center">
+            <img
+              src="/logo.png"
+              alt="ClipForge AI"
+              className="w-full h-full object-contain filter drop-shadow-[0_0_8px_rgba(168,85,247,0.4)]"
+            />
+          </div>
+          <AnimatePresence initial={false}>
+            {!sidebarCollapsed && (
+              <motion.span
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: 'auto' }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.2 }}
+                className="font-bold text-white text-lg whitespace-nowrap overflow-hidden"
+              >
+                ClipForge
+                <span className="bg-gradient-to-r from-brand-400 to-accent-400 bg-clip-text text-transparent"> AI</span>
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </Link>
       </div>
 
       {/* Nav */}

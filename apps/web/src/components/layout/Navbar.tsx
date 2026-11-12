@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { Menu, X, Zap, ChevronDown } from 'lucide-react'
+import { Menu, X, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { BrandLogo } from '@/components/ui/BrandLogo'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -39,15 +40,7 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2.5 shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-600 to-accent-500 flex items-center justify-center shadow-brand">
-              <Zap size={18} className="text-white" fill="white" />
-            </div>
-            <span className="font-bold text-lg text-white tracking-tight">
-              Clip<span className="gradient-text">Forge</span>
-              <span className="text-slate-400 font-light ml-0.5 text-xs">AI</span>
-            </span>
-          </Link>
+          <BrandLogo size="md" />
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-0.5">

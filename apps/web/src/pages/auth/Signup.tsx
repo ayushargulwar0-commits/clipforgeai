@@ -7,7 +7,8 @@ import { Card } from '@/components/ui/Card'
 import { useToast } from '@/components/ui/Toast'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuthStore, isOwnerEmail, isOwnerName } from '@/store/authStore'
-import { Zap, Lock, Mail, User, ArrowRight, CheckCircle2, Crown } from 'lucide-react'
+import { Lock, Mail, User, ArrowRight, CheckCircle2, Crown } from 'lucide-react'
+import { BrandLogo } from '@/components/ui/BrandLogo'
 
 export default function Signup() {
   const navigate = useNavigate()
@@ -123,15 +124,9 @@ export default function Signup() {
       <div className="min-h-[calc(100vh-4rem)] pt-8 pb-16 px-4 flex flex-col items-center justify-center">
         <div className="w-full max-w-md">
           <div className="text-center mb-6">
-            <Link to="/" className="inline-flex items-center gap-2 mb-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-600 to-accent-500 flex items-center justify-center shadow-brand">
-                <Zap size={20} className="text-white" fill="white" />
-              </div>
-              <span className="font-bold text-xl text-white tracking-tight">
-                Clip<span className="gradient-text">Forge</span>
-                <span className="text-slate-400 font-light ml-0.5 text-xs">AI</span>
-              </span>
-            </Link>
+            <div className="flex justify-center mb-3">
+              <BrandLogo size="lg" />
+            </div>
             <h1 className="text-2xl font-bold text-white">Create your free account</h1>
             <p className="text-xs text-slate-400 mt-1">
               Start turning long videos into viral clips today. No credit card required.
