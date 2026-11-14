@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -170,6 +170,78 @@ class ClipUpdate(BaseModel):
     description: str | None = Field(None, max_length=1000)
     hook: str | None = Field(None, max_length=300)
     editing_config: ClipEditingConfig | None = None
+
+
+# ---------------------------------------------------------------------------
+# Clip Editor (Phase 6A)
+# ---------------------------------------------------------------------------
+
+
+class CropCoordinates(BaseModel):
+    x: float = Field(0.0, ge=0.0, le=100.0)
+    y: float = Field(0.0, ge=0.0, le=100.0)
+    w: float = Field(100.0, gt=0.0, le=100.0)
+    h: float = Field(100.0, gt=0.0, le=100.0)
+
+
+class SplitFraming(BaseModel):
+    top: CropCoordinates = Field(default_factory=lambda: CropCoordinates(x=0.0, y=0.0, w=100.0, h=50.0))
+    bottom: CropCoordinates = Field(default_factory=lambda: CropCoordinates(x=0.0, y=50.0, w=100.0, h=50.0))
+
+
+class FramingConfig(BaseModel):
+    mode: Literal["crop", "split", "blur_fit"] = "crop"
+    crop: CropCoordinates = Field(default_factory=lambda: CropCoordinates(x=34.18, y=0.0, w=31.64, h=100.0))
+    split: SplitFraming = Field(default_factory=SplitFraming)
+
+
+class BackgroundConfig(BaseModel):
+    type: Literal["blur", "solid", "image"] = "blur"
+    value: str = "#000000"
+
+
+class CaptionsEditConfig(BaseModel):
+    enabled: bool = True
+    style: str = "default"
+    words: list[Any] = Field(default_factory=list)
+
+
+class TrimConfig(BaseModel):
+    in_val: float = Field(default=0.0, ge=0.0, alias="in")
+    out_val: float = Field(default=60.0, gt=0.0, alias="out")
+
+    @field_validator("out_val")
+    @classmethod
+    def validate_duration(cls, v: float, info) -> float:
+        in_val = info.data.get("in_val", 0.0)
+        if v <= in_val:
+            raise ValueError("'out' timestamp must be greater than 'in' timestamp")
+        if (v - in_val) > 180.0:
+            raise ValueError("Trimmed duration cannot exceed 180 seconds")
+        return v
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ClipEditJson(BaseModel):
+    trim: TrimConfig
+    aspect: Literal["9:16", "1:1", "4:5"] = "9:16"
+    framing: FramingConfig = Field(default_factory=FramingConfig)
+    background: BackgroundConfig = Field(default_factory=BackgroundConfig)
+    captions: CaptionsEditConfig = Field(default_factory=CaptionsEditConfig)
+    outro: Any = None
+    watermark: Any = None
+
+
+class ClipEditPayload(BaseModel):
+    edit_json: ClipEditJson
+
+
+class ClipEditOut(BaseModel):
+    clip_id: str
+    user_id: str
+    edit_json: dict[str, Any]
+    updated_at: str
 
 
 # ---------------------------------------------------------------------------

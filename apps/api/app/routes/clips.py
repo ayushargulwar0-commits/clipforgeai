@@ -23,7 +23,14 @@ from app.core.config import get_settings
 from app.core.database import get_supabase
 from app.core.security import get_current_user, get_user_id
 from app.models.enums import ClipStatus, JobType
-from app.models.schemas import ClipOut, ClipUpdate, JobOut, MessageResponse
+from app.models.schemas import (
+    ClipEditOut,
+    ClipEditPayload,
+    ClipOut,
+    ClipUpdate,
+    JobOut,
+    MessageResponse,
+)
 from app.workers.job_runner import get_job_runner
 
 logger = logging.getLogger(__name__)
@@ -620,6 +627,231 @@ async def render_selective_section(req: SelectiveRenderRequest):
         "duration": duration,
         "aspect_ratio": req.aspect_ratio or "9:16",
         "has_outro": req.include_outro,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 6A: Clip Editor (Shell, Trim, Framing & Layout)
+# ---------------------------------------------------------------------------
+
+import json
+_LOCAL_CLIP_EDITS_FILE = Path("storage/clip_edits.json")
+
+
+def _load_local_clip_edits() -> dict[str, dict]:
+    if _LOCAL_CLIP_EDITS_FILE.exists():
+        try:
+            with open(_LOCAL_CLIP_EDITS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_local_clip_edits(data: dict[str, dict]) -> None:
+    _LOCAL_CLIP_EDITS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_LOCAL_CLIP_EDITS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def _get_clip_record(clip_id: str, user_id: str) -> dict:
+    client = get_supabase()
+    try:
+        resp = client.table("clips").select("*").eq("id", clip_id).single().execute()
+        if resp.data:
+            _assert_clip_ownership(resp.data, user_id)
+            return resp.data
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    return {
+        "id": clip_id,
+        "owner_id": user_id,
+        "title": f"Clip {clip_id}",
+        "start": 0.0,
+        "end": 35.0,
+        "duration": 35.0,
+        "aspect_ratio": "9:16",
+    }
+
+
+@router.get("/clips/{clip_id}/edit", response_model=ClipEditOut, summary="Get clip editing state")
+async def get_clip_edit(
+    clip_id: str,
+    user: dict = Depends(get_current_user),
+) -> ClipEditOut:
+    user_id = get_user_id(user)
+    clip = _get_clip_record(clip_id, user_id)
+
+    # 1. Check database
+    client = get_supabase()
+    try:
+        resp = client.table("clip_edits").select("*").eq("clip_id", clip_id).single().execute()
+        if resp.data:
+            if resp.data.get("user_id") and resp.data.get("user_id") != user_id:
+                _assert_clip_ownership({"owner_id": resp.data["user_id"]}, user_id)
+            return ClipEditOut(
+                clip_id=clip_id,
+                user_id=user_id,
+                edit_json=resp.data.get("edit_json", {}),
+                updated_at=resp.data.get("updated_at", _utcnow()),
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    # 2. Check local fallback storage
+    local_edits = _load_local_clip_edits()
+    if clip_id in local_edits:
+        record = local_edits[clip_id]
+        if record.get("user_id") and record.get("user_id") != user_id:
+            _assert_clip_ownership({"owner_id": record["user_id"]}, user_id)
+        return ClipEditOut(
+            clip_id=clip_id,
+            user_id=user_id,
+            edit_json=record["edit_json"],
+            updated_at=record.get("updated_at", _utcnow()),
+        )
+
+    # 3. Default initial edit state derived from clip
+    c_start = float(clip.get("start", 0.0) or 0.0)
+    c_end = float(clip.get("end", c_start + 30.0) or (c_start + 30.0))
+    if c_end <= c_start:
+        c_end = c_start + 30.0
+
+    default_edit = {
+        "trim": {
+            "in": round(c_start, 2),
+            "out": round(min(c_start + 60.0, c_end), 2),
+        },
+        "aspect": "9:16",
+        "framing": {
+            "mode": "crop",
+            "crop": {"x": 34.18, "y": 0.0, "w": 31.64, "h": 100.0},
+            "split": {
+                "top": {"x": 0.0, "y": 0.0, "w": 100.0, "h": 50.0},
+                "bottom": {"x": 0.0, "y": 50.0, "w": 100.0, "h": 50.0},
+            },
+        },
+        "background": {
+            "type": "blur",
+            "value": "#000000",
+        },
+        "captions": {
+            "enabled": True,
+            "style": "default",
+            "words": [],
+        },
+        "outro": None,
+        "watermark": None,
+    }
+
+    return ClipEditOut(
+        clip_id=clip_id,
+        user_id=user_id,
+        edit_json=default_edit,
+        updated_at=_utcnow(),
+    )
+
+
+@router.put("/clips/{clip_id}/edit", response_model=ClipEditOut, summary="Save clip editing state")
+async def update_clip_edit(
+    clip_id: str,
+    payload: ClipEditPayload,
+    user: dict = Depends(get_current_user),
+) -> ClipEditOut:
+    user_id = get_user_id(user)
+    _get_clip_record(clip_id, user_id)
+
+    edit_data = payload.edit_json.model_dump(by_alias=True)
+    now_ts = _utcnow()
+    record = {
+        "clip_id": clip_id,
+        "user_id": user_id,
+        "edit_json": edit_data,
+        "updated_at": now_ts,
+    }
+
+    # 1. Save to Supabase table clip_edits if available
+    client = get_supabase()
+    try:
+        client.table("clip_edits").upsert(record).execute()
+    except Exception as exc:
+        logger.debug("Supabase upsert clip_edits skipped / fallback to local: %s", exc)
+
+    # 2. Always persist to local cache so changes survive restarts
+    local_edits = _load_local_clip_edits()
+    local_edits[clip_id] = record
+    _save_local_clip_edits(local_edits)
+
+    return ClipEditOut(
+        clip_id=clip_id,
+        user_id=user_id,
+        edit_json=edit_data,
+        updated_at=now_ts,
+    )
+
+
+@router.post("/clips/{clip_id}/auto-frame", summary="Auto-frame crop coordinates using face/subject detection")
+async def auto_frame_clip(
+    clip_id: str,
+    aspect: str = Query("9:16"),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    user_id = get_user_id(user)
+    clip = _get_clip_record(clip_id, user_id)
+
+    box_w = 31.64
+    if aspect == "1:1":
+        box_w = 56.25
+    elif aspect == "4:5":
+        box_w = 45.0
+
+    center_x = 50.0
+    mode = "crop"
+
+    try:
+        from app.routes.youtube import _resolve_video_file_path
+        vid_path = _resolve_video_file_path(clip_id, None)
+        if vid_path and vid_path.exists():
+            import sys
+            autoclip_dir = Path("services/autoclip")
+            if autoclip_dir.exists() and str(autoclip_dir) not in sys.path:
+                sys.path.insert(0, str(autoclip_dir))
+            from backend.pipeline.shorts_render import analyze_subject_crop
+            start_s = float(clip.get("start", 0.0) or 0.0)
+            dur_s = float(clip.get("duration", 30.0) or 30.0)
+            target_ratio = 9.0 / 16.0
+            if aspect == "1:1":
+                target_ratio = 1.0
+            elif aspect == "4:5":
+                target_ratio = 4.0 / 5.0
+            layout, traj = analyze_subject_crop(str(vid_path), start_s, min(dur_s, 60.0), target_ratio)
+            if traj:
+                avg_center = sum(traj) / len(traj)
+                center_x = round(avg_center * 100.0, 2)
+            if layout == "blurred_bg":
+                mode = "blur_fit"
+    except Exception as exc:
+        logger.debug("Auto-frame face detection fallback: %s", exc)
+
+    crop_x = max(0.0, min(100.0 - box_w, center_x - (box_w / 2.0)))
+
+    return {
+        "mode": mode,
+        "aspect": aspect,
+        "crop": {
+            "x": round(crop_x, 2),
+            "y": 0.0,
+            "w": round(box_w, 2),
+            "h": 100.0,
+        },
+        "split": {
+            "top": {"x": 0.0, "y": 0.0, "w": 100.0, "h": 50.0},
+            "bottom": {"x": 0.0, "y": 50.0, "w": 100.0, "h": 50.0},
+        },
     }
 
 

@@ -559,7 +559,7 @@ export default function Clips() {
                   <Button
                     variant="outline"
                     size="xs"
-                    onClick={() => navigate(`/dashboard/editor?clip=${clip.id}`)}
+                    onClick={() => navigate(`/dashboard/editor/${clip.id}`)}
                     className="gap-1 text-xs"
                   >
                     <Edit3 size={12} /> Edit
@@ -717,7 +717,7 @@ export default function Clips() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    navigate(`/dashboard/editor?clip=${selectedClip.id}`)
+                    navigate(`/dashboard/editor/${selectedClip.id}`)
                     setSelectedClip(null)
                   }}
                   className="gap-1.5"

@@ -78,6 +78,7 @@ export default function App() {
               <Route path="clips"     element={<Clips />} />
               <Route path="tools"     element={<AITools />} />
               <Route path="editor"    element={<Editor />} />
+              <Route path="editor/:clipId" element={<Editor />} />
               <Route path="brand-kit" element={<BrandKit />} />
               <Route path="scheduler" element={<Scheduler />} />
               <Route path="usage"     element={<Usage />} />

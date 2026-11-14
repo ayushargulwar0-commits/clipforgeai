@@ -143,10 +143,11 @@ def create_app() -> FastAPI:
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        from fastapi.encoders import jsonable_encoder
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
-                "detail": exc.errors(),
+                "detail": jsonable_encoder(exc.errors()),
                 "message": "Request validation failed",
             },
         )
