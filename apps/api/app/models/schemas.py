@@ -200,10 +200,39 @@ class BackgroundConfig(BaseModel):
     value: str = "#000000"
 
 
+class CaptionWord(BaseModel):
+    text: str
+    start: float
+    end: float
+
+
+class CaptionStyleConfig(BaseModel):
+    font: str = "Noto Sans"
+    size: int = 42
+    color: str = "#FFFFFF"
+    highlight_color: str = "#FFD700"
+    outline_color: str = "#000000"
+    outline_width: int = 3
+    box: bool = False
+    box_color: str = "#00000088"
+    words_per_line: int = Field(default=3, ge=1, le=4)
+    position: Literal["top", "middle", "lower_third"] = "lower_third"
+    y_offset: int = 0
+
+
 class CaptionsEditConfig(BaseModel):
     enabled: bool = True
-    style: str = "default"
-    words: list[Any] = Field(default_factory=list)
+    preset: str = "Firestorm Gold"
+    words: list[CaptionWord] = Field(default_factory=list)
+    style: CaptionStyleConfig | str = Field(default_factory=CaptionStyleConfig)
+    safe_zones: bool = True
+
+    @field_validator("style", mode="before")
+    @classmethod
+    def validate_style(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return CaptionStyleConfig()
+        return v
 
 
 class TrimConfig(BaseModel):

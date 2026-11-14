@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -18,22 +18,29 @@ import {
   Music,
   Repeat,
   AlertTriangle,
-  Check,
   Loader2,
   Move,
   Maximize2,
-  Palette,
-  Image as ImageIcon,
+  Search,
+  X,
+  Upload,
+  Trash2,
+  Eye,
+  EyeOff,
+  Scissors,
+  Plus,
+  ShieldAlert,
 } from 'lucide-react'
 import api from '@/lib/api'
 
 // ---------------------------------------------------------------------------
-// Types & Schema (Phase 6A Version 1)
+// Types & Schema (Phase 6B Version 1)
 // ---------------------------------------------------------------------------
 
 export type AspectRatio = '9:16' | '1:1' | '4:5'
 export type FramingMode = 'crop' | 'split' | 'blur_fit'
 export type BackgroundType = 'blur' | 'solid' | 'image'
+export type CaptionPosition = 'top' | 'middle' | 'lower_third'
 
 export interface CropBox {
   x: number // 0-100 percentage
@@ -63,18 +70,127 @@ export interface TrimConfig {
   out: number
 }
 
+export interface CaptionWord {
+  text: string
+  start: number
+  end: number
+}
+
+export interface CaptionStyle {
+  font: string
+  size: number
+  color: string
+  highlight_color: string
+  outline_color: string
+  outline_width: number
+  box: boolean
+  box_color: string
+  words_per_line: number // 1 to 4
+  position: CaptionPosition
+  y_offset: number
+}
+
+export interface CaptionsConfig {
+  enabled: boolean
+  preset: string
+  words: CaptionWord[]
+  style: CaptionStyle
+  safe_zones: boolean
+}
+
 export interface EditJson {
   trim: TrimConfig
   aspect: AspectRatio
   framing: FramingConfig
   background: BackgroundConfig
-  captions: {
-    enabled: boolean
-    style: string
-    words: any[]
-  }
+  captions: CaptionsConfig
   outro: any
   watermark: any
+}
+
+// ---------------------------------------------------------------------------
+// 6 Original Style Presets
+// ---------------------------------------------------------------------------
+
+export const STYLE_PRESETS: Record<string, CaptionStyle> = {
+  'Firestorm Gold': {
+    font: 'Noto Sans',
+    size: 42,
+    color: '#FFFFFF',
+    highlight_color: '#FFD700',
+    outline_color: '#000000',
+    outline_width: 3,
+    box: false,
+    box_color: '#00000088',
+    words_per_line: 3,
+    position: 'lower_third',
+    y_offset: 0,
+  },
+  'Cyber Neon': {
+    font: 'Noto Sans',
+    size: 44,
+    color: '#E0F7FA',
+    highlight_color: '#00FFCC',
+    outline_color: '#0D0221',
+    outline_width: 4,
+    box: true,
+    box_color: '#120024CC',
+    words_per_line: 2,
+    position: 'lower_third',
+    y_offset: 0,
+  },
+  'Velvet Cinema': {
+    font: 'Noto Sans',
+    size: 38,
+    color: '#FFF8E7',
+    highlight_color: '#FFA726',
+    outline_color: '#1A0E05',
+    outline_width: 2,
+    box: true,
+    box_color: '#21130CCC',
+    words_per_line: 3,
+    position: 'lower_third',
+    y_offset: 0,
+  },
+  'Nordic Minimal': {
+    font: 'Noto Sans',
+    size: 40,
+    color: '#F8FAFC',
+    highlight_color: '#60A5FA',
+    outline_color: '#0F172A',
+    outline_width: 3,
+    box: false,
+    box_color: '#0F172ACC',
+    words_per_line: 3,
+    position: 'lower_third',
+    y_offset: 0,
+  },
+  'Devanagari Express': {
+    font: 'Noto Sans Devanagari',
+    size: 44,
+    color: '#FFFFFF',
+    highlight_color: '#FF9933',
+    outline_color: '#138808',
+    outline_width: 3,
+    box: true,
+    box_color: '#000000B3',
+    words_per_line: 2,
+    position: 'lower_third',
+    y_offset: 0,
+  },
+  'Glitch Pulse': {
+    font: 'Noto Sans',
+    size: 46,
+    color: '#F1F5F9',
+    highlight_color: '#EC4899',
+    outline_color: '#3B0764',
+    outline_width: 4,
+    box: false,
+    box_color: '#00000099',
+    words_per_line: 2,
+    position: 'lower_third',
+    y_offset: 0,
+  },
 }
 
 const DEFAULT_EDIT_JSON: EditJson = {
@@ -94,14 +210,24 @@ const DEFAULT_EDIT_JSON: EditJson = {
   },
   captions: {
     enabled: true,
-    style: 'default',
-    words: [],
+    preset: 'Firestorm Gold',
+    words: [
+      { text: 'Stop', start: 0.5, end: 1.0 },
+      { text: 'scrolling', start: 1.0, end: 1.6 },
+      { text: 'right', start: 1.6, end: 2.1 },
+      { text: 'now.', start: 2.1, end: 2.7 },
+      { text: 'This', start: 3.0, end: 3.4 },
+      { text: 'secret', start: 3.4, end: 4.0 },
+      { text: 'changes', start: 4.0, end: 4.6 },
+      { text: 'everything.', start: 4.6, end: 5.3 },
+    ],
+    style: STYLE_PRESETS['Firestorm Gold'],
+    safe_zones: true,
   },
   outro: null,
   watermark: null,
 }
 
-// Sample fallback video for demonstration when no video is uploaded yet
 const SAMPLE_HORIZONTAL_VIDEO =
   'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'
 
@@ -131,6 +257,13 @@ export default function Editor() {
   const [isSaving, setIsSaving] = useState(false)
   const [isAutoFraming, setIsAutoFraming] = useState(false)
   const [hasUnsaved, setHasUnsaved] = useState(false)
+  const [showSafeZoneOverlay, setShowSafeZoneOverlay] = useState(true)
+
+  // Transcript Search & Editing State
+  const [searchFilter, setSearchFilter] = useState('')
+  const [editingWordIdx, setEditingWordIdx] = useState<number | null>(null)
+  const [editingWordText, setEditingWordText] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Interactive Dragging on Source Preview
   const [isDraggingCrop, setIsDraggingCrop] = useState(false)
@@ -186,7 +319,6 @@ export default function Editor() {
 
     async function loadClipData() {
       try {
-        // Load clip metadata
         const clipRes = await api.get(`/clips/${clipId}`).catch(() => null)
         if (clipRes?.data && isMounted) {
           if (clipRes.data.title) setClipTitle(clipRes.data.title)
@@ -197,10 +329,20 @@ export default function Editor() {
           }
         }
 
-        // Load edit state
         const editRes = await api.get(`/clips/${clipId}/edit`)
         if (editRes?.data?.edit_json && isMounted) {
-          const loaded = editRes.data.edit_json
+          const loaded: EditJson = editRes.data.edit_json
+          // Ensure captions object has style and preset defaults if legacy
+          if (!loaded.captions.style || typeof loaded.captions.style === 'string') {
+            loaded.captions.style = STYLE_PRESETS['Firestorm Gold']
+          }
+          if (!loaded.captions.preset) {
+            loaded.captions.preset = 'Firestorm Gold'
+          }
+          if (loaded.captions.safe_zones === undefined) {
+            loaded.captions.safe_zones = true
+          }
+
           setEditJson(loaded)
           setHistory([loaded])
           setHistoryIdx(0)
@@ -211,7 +353,6 @@ export default function Editor() {
           }
         }
       } catch {
-        // Fallback to localStorage if offline
         const localKey = `clipforge_edit_${clipId}`
         const cached = localStorage.getItem(localKey)
         if (cached && isMounted) {
@@ -247,7 +388,6 @@ export default function Editor() {
           success('Changes Saved', 'Clip edit settings saved successfully.')
         }
       } catch (err: any) {
-        // Save locally anyway
         localStorage.setItem(`clipforge_edit_${clipId}`, JSON.stringify(editJson))
         if (showNotification) {
           toastError('Saved to Local Cache', err?.message || 'Backed up locally.')
@@ -278,12 +418,10 @@ export default function Editor() {
     const t = videoRef.current.currentTime
     setCurrentTime(t)
 
-    // Sync background video if present
     if (bgVideoRef.current && Math.abs(bgVideoRef.current.currentTime - t) > 0.2) {
       bgVideoRef.current.currentTime = t
     }
 
-    // Loop check
     if (loopTrim && t >= editJson.trim.out) {
       videoRef.current.currentTime = editJson.trim.in
       if (bgVideoRef.current) bgVideoRef.current.currentTime = editJson.trim.in
@@ -307,31 +445,34 @@ export default function Editor() {
     }
   }
 
+  const seekTo = (sec: number) => {
+    if (!videoRef.current) return
+    const clamped = Math.max(0, Math.min(duration, sec))
+    videoRef.current.currentTime = clamped
+    setCurrentTime(clamped)
+  }
+
   // -------------------------------------------------------------------------
   // 5. Keyboard Shortcuts
   // -------------------------------------------------------------------------
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
         return
       }
 
-      // Save: Ctrl+S / Cmd+S
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
         saveChanges(true)
         return
       }
 
-      // Undo: Ctrl+Z / Cmd+Z
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         handleUndo()
         return
       }
 
-      // Redo: Ctrl+Y or Ctrl+Shift+Z / Cmd+Shift+Z
       if (
         ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') ||
         ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z')
@@ -341,14 +482,12 @@ export default function Editor() {
         return
       }
 
-      // Space: Play / Pause
       if (e.code === 'Space') {
         e.preventDefault()
         togglePlay()
         return
       }
 
-      // 'I': Set In point
       if (e.key.toLowerCase() === 'i') {
         e.preventDefault()
         const newIn = Math.max(0, Math.min(currentTime, editJson.trim.out - 0.5))
@@ -359,7 +498,6 @@ export default function Editor() {
         return
       }
 
-      // 'O': Set Out point
       if (e.key.toLowerCase() === 'o') {
         e.preventDefault()
         const newOut = Math.min(duration, Math.max(editJson.trim.in + 0.5, currentTime))
@@ -372,27 +510,18 @@ export default function Editor() {
         return
       }
 
-      // Left / Right step
       const stepFrames = e.shiftKey ? 5 : 1
       const stepSeconds = stepFrames / 30.0
 
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        if (videoRef.current) {
-          const t = Math.max(0, videoRef.current.currentTime - stepSeconds)
-          videoRef.current.currentTime = t
-          setCurrentTime(t)
-        }
+        seekTo(currentTime - stepSeconds)
         return
       }
 
       if (e.key === 'ArrowRight') {
         e.preventDefault()
-        if (videoRef.current) {
-          const t = Math.min(duration, videoRef.current.currentTime + stepSeconds)
-          videoRef.current.currentTime = t
-          setCurrentTime(t)
-        }
+        seekTo(currentTime + stepSeconds)
         return
       }
     }
@@ -402,12 +531,8 @@ export default function Editor() {
   }, [currentTime, duration, editJson, handleRedo, handleUndo, saveChanges, updateEdit])
 
   // -------------------------------------------------------------------------
-  // 6. Aspect Ratio & Target Width Calculations
+  // 6. Framing & Aspect Logic
   // -------------------------------------------------------------------------
-  // On a standard 16:9 source frame:
-  // 9:16 target width = 31.64% of 16:9 width
-  // 1:1 target width  = 56.25% of 16:9 width
-  // 4:5 target width  = 45.00% of 16:9 width
   const getAspectCropWidth = (aspect: AspectRatio): number => {
     if (aspect === '1:1') return 56.25
     if (aspect === '4:5') return 45.0
@@ -435,9 +560,6 @@ export default function Editor() {
     })
   }
 
-  // -------------------------------------------------------------------------
-  // 7. Auto-Frame with Face/Subject Detection API
-  // -------------------------------------------------------------------------
   const handleAutoFrame = async () => {
     setIsAutoFraming(true)
     try {
@@ -468,9 +590,7 @@ export default function Editor() {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // 8. Draggable Crop Box Mouse Handlers
-  // -------------------------------------------------------------------------
+  // Draggable Crop Box Mouse Handlers
   const handleCropMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()
     setIsDraggingCrop(true)
@@ -497,7 +617,7 @@ export default function Editor() {
             crop: { ...prev.framing.crop, x: round2(newX) },
           },
         }),
-        false // don't flood history while dragging
+        false
       )
     }
 
@@ -505,7 +625,6 @@ export default function Editor() {
       if (isDraggingCrop) {
         setIsDraggingCrop(false)
         setDragStart(null)
-        // Record final history entry
         updateEdit((prev) => ({ ...prev }))
       }
     }
@@ -521,13 +640,203 @@ export default function Editor() {
   }, [dragStart, editJson.framing.crop.w, isDraggingCrop, updateEdit])
 
   // -------------------------------------------------------------------------
-  // Trim Length & Warnings
+  // 7. Phase 6B: Live Caption Karaoke & Safe Zones
   // -------------------------------------------------------------------------
+  const wordsPerLine = Math.max(1, Math.min(4, editJson.captions?.style?.words_per_line || 3))
+  const wordsList = editJson.captions?.words || []
+
+  // Group words into lines of wordsPerLine
+  const captionLines = useMemo(() => {
+    const lines: Array<{ index: number; words: CaptionWord[]; start: number; end: number }> = []
+    for (let i = 0; i < wordsList.length; i += wordsPerLine) {
+      const chunk = wordsList.slice(i, i + wordsPerLine)
+      if (chunk.length > 0) {
+        lines.push({
+          index: Math.floor(i / wordsPerLine),
+          words: chunk,
+          start: chunk[0].start,
+          end: chunk[chunk.length - 1].end,
+        })
+      }
+    }
+    return lines
+  }, [wordsList, wordsPerLine])
+
+  // Active line for current time
+  const activeLine = useMemo(() => {
+    return captionLines.find((l) => currentTime >= l.start && currentTime <= l.end + 0.3)
+  }, [captionLines, currentTime])
+
+  // Apply style preset
+  const handleApplyPreset = (presetName: string) => {
+    const preset = STYLE_PRESETS[presetName]
+    if (!preset) return
+    updateEdit((prev) => ({
+      ...prev,
+      captions: {
+        ...prev.captions,
+        preset: presetName,
+        style: {
+          ...preset,
+          words_per_line: prev.captions.style.words_per_line,
+        },
+      },
+    }))
+    success('Preset Applied', `Style updated to "${presetName}".`)
+  }
+
+  // Update specific style field
+  const updateStyle = (key: keyof CaptionStyle, value: any) => {
+    updateEdit((prev) => ({
+      ...prev,
+      captions: {
+        ...prev.captions,
+        style: {
+          ...prev.captions.style,
+          [key]: value,
+        },
+      },
+    }))
+  }
+
+  // -------------------------------------------------------------------------
+  // 8. Transcript Editor Actions (Edit, Split, Merge, Delete, Import)
+  // -------------------------------------------------------------------------
+  const filteredLines = useMemo(() => {
+    if (!searchFilter.trim()) return captionLines
+    const q = searchFilter.toLowerCase()
+    return captionLines.filter((line) => line.words.some((w) => w.text.toLowerCase().includes(q)))
+  }, [captionLines, searchFilter])
+
+  const handleSaveWordEdit = (wordGlobalIdx: number) => {
+    if (!editingWordText.trim()) return
+    updateEdit((prev) => {
+      const newWords = [...prev.captions.words]
+      if (newWords[wordGlobalIdx]) {
+        newWords[wordGlobalIdx] = {
+          ...newWords[wordGlobalIdx],
+          text: editingWordText.trim(),
+        }
+      }
+      return {
+        ...prev,
+        captions: { ...prev.captions, words: newWords },
+      }
+    })
+    setEditingWordIdx(null)
+    setEditingWordText('')
+  }
+
+  const handleDeleteWord = (wordGlobalIdx: number) => {
+    updateEdit((prev) => {
+      const newWords = prev.captions.words.filter((_, idx) => idx !== wordGlobalIdx)
+      return {
+        ...prev,
+        captions: { ...prev.captions, words: newWords },
+      }
+    })
+  }
+
+  const handleSplitLine = (lineIdx: number) => {
+    // Splits line by decreasing words_per_line or re-chunking
+    const targetWord = wordsList[lineIdx * wordsPerLine + 1]
+    if (!targetWord) return
+    updateStyle('words_per_line', Math.max(1, wordsPerLine - 1))
+    success('Adjusted Flow', 'Words per line reduced to split phrasing.')
+  }
+
+  const handleMergeLine = (lineIdx: number) => {
+    updateStyle('words_per_line', Math.min(4, wordsPerLine + 1))
+    success('Adjusted Flow', 'Words per line increased to merge lines.')
+  }
+
+  // Subtitle File Import (.srt / .vtt / .ass)
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      try {
+        const text = String(evt.target?.result || '')
+        const parsedWords = parseSubtitleTextToWords(text)
+        if (parsedWords.length === 0) {
+          toastError('Import Failed', 'No valid subtitle cues or timestamps found.')
+          return
+        }
+
+        if (window.confirm(`Replace existing captions with ${parsedWords.length} words from "${file.name}"?`)) {
+          updateEdit((prev) => ({
+            ...prev,
+            captions: {
+              ...prev.captions,
+              words: parsedWords,
+            },
+          }))
+          success('Captions Imported', `Loaded ${parsedWords.length} words from ${file.name}.`)
+        }
+      } catch (err: any) {
+        toastError('Import Error', err?.message || 'Could not parse subtitle file.')
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  // -------------------------------------------------------------------------
+  // Safe Zone Calculation for Captions
+  // -------------------------------------------------------------------------
+  const captionStyle = editJson.captions?.style || STYLE_PRESETS['Firestorm Gold']
+  const safeZonesActive = editJson.captions?.safe_zones
+
+  // Calculate top/bottom position clamped away from UI safe zones
+  // On 9:16 Shorts: bottom 20% is deadzone (title/sound), right 15% is deadzone (like/comment buttons), top 8% is header
+  const getCaptionContainerStyle = (): React.CSSProperties => {
+    let basePosStyle: React.CSSProperties = {}
+    const yOff = captionStyle.y_offset || 0
+
+    if (captionStyle.position === 'top') {
+      const topOffset = safeZonesActive ? Math.max(50, 60 + yOff) : Math.max(20, 20 + yOff)
+      basePosStyle = { top: `${topOffset}px` }
+    } else if (captionStyle.position === 'middle') {
+      basePosStyle = {
+        top: '50%',
+        transform: `translateY(calc(-50% + ${yOff}px))`,
+      }
+    } else {
+      // lower_third
+      // If safe zones active: clamp away from bottom 20% (~100px on 533px preview height)
+      const bottomOffset = safeZonesActive ? Math.max(105, 105 - yOff) : Math.max(30, 30 - yOff)
+      basePosStyle = { bottom: `${bottomOffset}px` }
+    }
+
+    return {
+      position: 'absolute',
+      left: safeZonesActive ? '20px' : '10px',
+      right: safeZonesActive ? '65px' : '10px', // Right margin keeps clear of button column
+      ...basePosStyle,
+      zIndex: 25,
+      pointerEvents: 'none',
+      display: 'flex',
+      justifyContent: 'center',
+    }
+  }
+
   const trimmedDuration = Math.max(0, editJson.trim.out - editJson.trim.in)
   const isOver60s = trimmedDuration > 60
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] -m-6 bg-slate-950 text-slate-100 overflow-hidden select-none">
+      {/* Hidden File Input for .srt / .vtt / .ass */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".srt,.vtt,.ass"
+        onChange={handleImportFile}
+        className="hidden"
+      />
+
       {/* ===================================================================== */}
       {/* TOP BAR: Undo, Redo, Save, Export, Aspect switcher                    */}
       {/* ===================================================================== */}
@@ -608,7 +917,7 @@ export default function Editor() {
 
           <Button
             size="sm"
-            onClick={() => success('Export Queued', 'Full HD 1080x1920 render started with your trim & framing.')}
+            onClick={() => success('Export Queued', 'Full HD 1080x1920 render started with captions & framing.')}
             className="gap-1.5 bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs"
           >
             <Download size={14} /> Export
@@ -622,6 +931,21 @@ export default function Editor() {
       <div className="flex-1 flex overflow-hidden">
         {/* CENTER: Live Aspect Preview */}
         <main className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-950 relative overflow-hidden">
+          {/* Safe Zone Toggle Button in Corner */}
+          <div className="absolute top-4 left-6 z-30">
+            <button
+              onClick={() => setShowSafeZoneOverlay((v) => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition backdrop-blur shadow ${
+                showSafeZoneOverlay
+                  ? 'border-amber-500/60 bg-amber-500/20 text-amber-300'
+                  : 'border-slate-800 bg-slate-900/80 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {showSafeZoneOverlay ? <Eye size={13} /> : <EyeOff size={13} />}
+              Safe Zones Guide
+            </button>
+          </div>
+
           {/* Aspect Frame */}
           <div
             className={`relative rounded-2xl overflow-hidden shadow-2xl border border-slate-800 bg-black transition-all duration-200 flex items-center justify-center ${
@@ -661,7 +985,6 @@ export default function Editor() {
 
             {/* Video Foreground Container */}
             <div className="absolute inset-0 z-10 overflow-hidden flex items-center justify-center">
-              {/* MODE 1: CROP (Transform CSS object positioning) */}
               {editJson.framing.mode === 'crop' && (
                 <div className="relative w-full h-full overflow-hidden">
                   <video
@@ -684,7 +1007,6 @@ export default function Editor() {
                 </div>
               )}
 
-              {/* MODE 2: BLUR-FIT (Pitted in center) */}
               {editJson.framing.mode === 'blur_fit' && (
                 <video
                   ref={videoRef}
@@ -698,10 +1020,8 @@ export default function Editor() {
                 />
               )}
 
-              {/* MODE 3: SPLIT SCREEN */}
               {editJson.framing.mode === 'split' && (
                 <div className="w-full h-full flex flex-col">
-                  {/* Top Half */}
                   <div className="relative w-full h-1/2 overflow-hidden border-b border-brand-500/30">
                     <video
                       ref={videoRef}
@@ -716,11 +1036,7 @@ export default function Editor() {
                         objectFit: 'cover',
                       }}
                     />
-                    <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/60 text-[10px] text-slate-300">
-                      Top Box
-                    </div>
                   </div>
-                  {/* Bottom Half */}
                   <div className="relative w-full h-1/2 overflow-hidden">
                     <video
                       src={videoUrl}
@@ -734,9 +1050,6 @@ export default function Editor() {
                         objectFit: 'cover',
                       }}
                     />
-                    <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/60 text-[10px] text-slate-300">
-                      Bottom Box
-                    </div>
                   </div>
                 </div>
               )}
@@ -752,18 +1065,64 @@ export default function Editor() {
               </button>
             )}
 
-            {/* Captions Preview Overlay (Shell) */}
-            {editJson.captions.enabled && (
-              <div className="absolute bottom-12 inset-x-4 z-20 pointer-events-none text-center">
-                <span className="inline-block px-3 py-1.5 rounded-lg bg-black/75 text-white font-extrabold text-sm uppercase tracking-wide border border-white/20 shadow-lg">
-                  Captions Preview
-                </span>
+            {/* SAFE ZONE OVERLAY GUIDE (YouTube Shorts UI Outlines) */}
+            {showSafeZoneOverlay && editJson.aspect === '9:16' && (
+              <div className="absolute inset-0 z-20 pointer-events-none border border-dashed border-amber-500/30">
+                {/* Right button column deadzone */}
+                <div className="absolute right-0 top-1/3 bottom-24 w-12 border-l border-dashed border-amber-500/40 bg-amber-500/5 flex items-center justify-center">
+                  <span className="text-[9px] text-amber-400 font-mono -rotate-90">UI Buttons</span>
+                </div>
+                {/* Bottom title & channel deadzone */}
+                <div className="absolute inset-x-0 bottom-0 h-24 border-t border-dashed border-amber-500/40 bg-amber-500/5 flex items-center justify-center">
+                  <span className="text-[10px] text-amber-400 font-mono">Title & Audio UI Deadzone (20%)</span>
+                </div>
+              </div>
+            )}
+
+            {/* LIVE CAPTION KARAOKE PREVIEW */}
+            {editJson.captions?.enabled && activeLine && (
+              <div style={getCaptionContainerStyle()}>
+                <div
+                  style={{
+                    fontFamily: `'${captionStyle.font || 'Noto Sans'}', 'Noto Sans Devanagari', sans-serif`,
+                    fontSize: `${Math.round(captionStyle.size * 0.42)}px`,
+                    lineHeight: '1.25',
+                    textAlign: 'center',
+                    backgroundColor: captionStyle.box ? captionStyle.box_color : 'transparent',
+                    padding: captionStyle.box ? '4px 10px' : '0px',
+                    borderRadius: captionStyle.box ? '8px' : '0px',
+                    textShadow: `${captionStyle.outline_width}px ${captionStyle.outline_width}px 0 ${captionStyle.outline_color}, -${captionStyle.outline_width}px -${captionStyle.outline_width}px 0 ${captionStyle.outline_color}, -${captionStyle.outline_width}px ${captionStyle.outline_width}px 0 ${captionStyle.outline_color}, ${captionStyle.outline_width}px -${captionStyle.outline_width}px 0 ${captionStyle.outline_color}`,
+                    display: 'inline-flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    maxWidth: '90%',
+                  }}
+                  className="font-black tracking-tight"
+                >
+                  {activeLine.words.map((w, wIdx) => {
+                    const isWordActive = currentTime >= w.start && currentTime <= w.end
+                    return (
+                      <span
+                        key={wIdx}
+                        style={{
+                          color: isWordActive ? captionStyle.highlight_color : captionStyle.color,
+                          transform: isWordActive ? 'scale(1.08)' : 'scale(1)',
+                          transition: 'transform 0.08s ease, color 0.08s ease',
+                          display: 'inline-block',
+                        }}
+                      >
+                        {w.text}
+                      </span>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
         </main>
 
-        {/* RIGHT PANEL: 3 Tabs (Framing & Layout | Text & Subtitles | Audio & Outro) */}
+        {/* RIGHT PANEL: 3 Tabs */}
         <aside className="w-84 border-l border-surface-border bg-surface/50 backdrop-blur flex flex-col shrink-0">
           {/* Tab Navigation */}
           <div className="flex border-b border-surface-border">
@@ -785,7 +1144,7 @@ export default function Editor() {
                   : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Type size={14} /> Text
+              <Type size={14} /> Subtitles
             </button>
             <button
               onClick={() => setActiveTab('audio')}
@@ -802,7 +1161,6 @@ export default function Editor() {
           {/* TAB 1: Framing & Layout */}
           {activeTab === 'framing' && (
             <div className="p-5 space-y-6 overflow-y-auto flex-1 text-xs">
-              {/* Framing Mode Selection */}
               <div>
                 <label className="font-bold text-slate-300 block mb-2 uppercase tracking-wider text-[10px]">
                   Framing Mode
@@ -838,7 +1196,6 @@ export default function Editor() {
                 </div>
               </div>
 
-              {/* Draggable Source Preview Box */}
               {editJson.framing.mode === 'crop' && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -865,7 +1222,6 @@ export default function Editor() {
                     Drag the crop box left/right over the 16:9 source to choose your frame:
                   </p>
 
-                  {/* 16:9 Horizontal Source Miniature */}
                   <div
                     ref={sourceBoxRef}
                     className="relative w-full aspect-video rounded-lg overflow-hidden border border-slate-700 bg-slate-900 select-none cursor-ew-resize"
@@ -875,7 +1231,6 @@ export default function Editor() {
                       className="w-full h-full object-cover opacity-60 pointer-events-none"
                     />
 
-                    {/* Draggable Aspect Locked Box */}
                     <div
                       onMouseDown={handleCropMouseDown}
                       style={{
@@ -887,7 +1242,6 @@ export default function Editor() {
                       <div className="p-1 rounded bg-black/70 text-brand-300">
                         <Move size={12} />
                       </div>
-                      {/* Left & Right handles */}
                       <div className="absolute left-0 inset-y-0 w-1 bg-brand-400" />
                       <div className="absolute right-0 inset-y-0 w-1 bg-brand-400" />
                     </div>
@@ -901,7 +1255,6 @@ export default function Editor() {
                 </div>
               )}
 
-              {/* Background Options (for Blur-Fit & Spills) */}
               <div>
                 <label className="font-bold text-slate-300 block mb-2 uppercase tracking-wider text-[10px]">
                   Background Fill
@@ -964,39 +1317,291 @@ export default function Editor() {
             </div>
           )}
 
-          {/* TAB 2: Text & Subtitles (Shell Placeholder for Phase 6B) */}
+          {/* TAB 2: Text & Subtitles (Phase 6B Complete) */}
           {activeTab === 'text' && (
-            <div className="p-5 space-y-4 text-xs text-slate-400">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-200">Subtitles & Captions</span>
-                <Badge variant="muted" className="text-[10px]">
-                  Phase 6B Shell
-                </Badge>
+            <div className="p-4 space-y-5 overflow-y-auto flex-1 text-xs">
+              {/* Enable / Disable Captions */}
+              <div className="flex items-center justify-between pb-3 border-b border-surface-border">
+                <div>
+                  <span className="font-bold text-slate-200 block text-xs">Burn In Captions</span>
+                  <span className="text-[11px] text-slate-400">Karaoke-style word highlight</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={editJson.captions.enabled}
+                  onChange={(e) =>
+                    updateEdit((prev) => ({
+                      ...prev,
+                      captions: { ...prev.captions, enabled: e.target.checked },
+                    }))
+                  }
+                  className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500 cursor-pointer"
+                />
               </div>
 
-              <div className="p-4 rounded-xl border border-surface-border bg-slate-900/50 space-y-3">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <span className="text-slate-300">Burn Animated Captions</span>
+              {/* 6 Original Style Presets */}
+              <div>
+                <label className="font-bold text-slate-300 block mb-2 uppercase tracking-wider text-[10px]">
+                  Style Presets
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.keys(STYLE_PRESETS).map((pName) => {
+                    const isSelected = editJson.captions.preset === pName
+                    return (
+                      <button
+                        key={pName}
+                        onClick={() => handleApplyPreset(pName)}
+                        className={`p-2 rounded-xl border text-left transition ${
+                          isSelected
+                            ? 'border-brand-500 bg-brand-500/15 text-white shadow'
+                            : 'border-surface-border bg-slate-900/60 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="font-bold text-xs truncate">{pName}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                          {pName === 'Devanagari Express' ? 'Hindi / English' : `${STYLE_PRESETS[pName].words_per_line} words/line`}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Fine-Tuning Controls */}
+              <div className="space-y-3 pt-2 border-t border-surface-border">
+                <label className="font-bold text-slate-300 block uppercase tracking-wider text-[10px]">
+                  Custom Formatting
+                </label>
+
+                {/* Words Per Line */}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Words per line:</span>
+                  <div className="flex items-center gap-1 bg-slate-900 rounded-lg p-0.5 border border-surface-border">
+                    {[1, 2, 3, 4].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => updateStyle('words_per_line', n)}
+                        className={`px-2 py-0.5 rounded text-xs transition ${
+                          wordsPerLine === n
+                            ? 'bg-brand-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Font Size */}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Font Size ({captionStyle.size}px):</span>
+                  <input
+                    type="range"
+                    min="24"
+                    max="64"
+                    value={captionStyle.size}
+                    onChange={(e) => updateStyle('size', parseInt(e.target.value))}
+                    className="w-28 accent-brand-500 cursor-pointer"
+                  />
+                </div>
+
+                {/* Colors (Primary, Highlight, Outline) */}
+                <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+                  <div className="p-2 rounded-lg bg-slate-900 border border-surface-border">
+                    <span className="text-slate-400 block mb-1">Text Color</span>
+                    <input
+                      type="color"
+                      value={captionStyle.color}
+                      onChange={(e) => updateStyle('color', e.target.value)}
+                      className="w-6 h-6 mx-auto cursor-pointer block bg-transparent"
+                    />
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-900 border border-surface-border">
+                    <span className="text-slate-400 block mb-1">Highlight</span>
+                    <input
+                      type="color"
+                      value={captionStyle.highlight_color}
+                      onChange={(e) => updateStyle('highlight_color', e.target.value)}
+                      className="w-6 h-6 mx-auto cursor-pointer block bg-transparent"
+                    />
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-900 border border-surface-border">
+                    <span className="text-slate-400 block mb-1">Outline</span>
+                    <input
+                      type="color"
+                      value={captionStyle.outline_color}
+                      onChange={(e) => updateStyle('outline_color', e.target.value)}
+                      className="w-6 h-6 mx-auto cursor-pointer block bg-transparent"
+                    />
+                  </div>
+                </div>
+
+                {/* Position & Safe Zones Toggle */}
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-slate-400">Position:</span>
+                  <select
+                    value={captionStyle.position}
+                    onChange={(e) => updateStyle('position', e.target.value as CaptionPosition)}
+                    className="bg-slate-900 border border-surface-border text-white text-xs rounded px-2 py-1"
+                  >
+                    <option value="lower_third">Lower Third (Recommended)</option>
+                    <option value="middle">Middle</option>
+                    <option value="top">Top</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Safe Zones Clamping:</span>
                   <input
                     type="checkbox"
-                    checked={editJson.captions.enabled}
+                    checked={editJson.captions.safe_zones}
                     onChange={(e) =>
                       updateEdit((prev) => ({
                         ...prev,
-                        captions: { ...prev.captions, enabled: e.target.checked },
+                        captions: { ...prev.captions, safe_zones: e.target.checked },
                       }))
                     }
-                    className="rounded text-brand-600 focus:ring-brand-500"
+                    className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500 cursor-pointer"
                   />
-                </label>
-                <p className="text-[11px] text-slate-500">
-                  Devanagari (Hindi) and English font styles with word-level highlight animation. Full caption editor coming in Phase 6B.
-                </p>
+                </div>
+              </div>
+
+              {/* TRANSCRIPT EDITOR PANEL */}
+              <div className="pt-3 border-t border-surface-border space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-300 uppercase tracking-wider text-[10px]">
+                    Transcript Editor ({wordsList.length} words)
+                  </label>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="gap-1 text-[10px]"
+                    title="Import .srt, .vtt, or .ass file"
+                  >
+                    <Upload size={11} /> Import Subtitles
+                  </Button>
+                </div>
+
+                {/* Search Box */}
+                <div className="relative">
+                  <Search size={13} className="absolute left-2.5 top-2.5 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Search caption phrases..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-slate-900 border border-surface-border text-white text-xs focus:outline-none focus:border-brand-500"
+                  />
+                  {searchFilter && (
+                    <button
+                      onClick={() => setSearchFilter('')}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-white"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Lines List */}
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {filteredLines.length === 0 ? (
+                    <p className="text-[11px] text-slate-500 text-center py-4">No matching captions found.</p>
+                  ) : (
+                    filteredLines.map((line) => {
+                      const isCurrentLine = currentTime >= line.start && currentTime <= line.end
+                      return (
+                        <div
+                          key={line.index}
+                          className={`p-2 rounded-lg border transition ${
+                            isCurrentLine
+                              ? 'border-brand-500/60 bg-brand-500/10'
+                              : 'border-surface-border bg-slate-900/50 hover:border-slate-700'
+                          }`}
+                        >
+                          {/* Timestamp & Line Seek */}
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1.5">
+                            <button
+                              onClick={() => seekTo(line.start)}
+                              className="font-mono text-brand-400 hover:underline flex items-center gap-1"
+                            >
+                              <Play size={10} fill="currentColor" /> {formatTime(line.start)} - {formatTime(line.end)}
+                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleSplitLine(line.index)}
+                                title="Split line"
+                                className="p-0.5 hover:text-white text-slate-500"
+                              >
+                                <Scissors size={11} />
+                              </button>
+                              <button
+                                onClick={() => handleMergeLine(line.index)}
+                                title="Merge with next"
+                                className="p-0.5 hover:text-white text-slate-500"
+                              >
+                                <Plus size={11} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Words in line */}
+                          <div className="flex flex-wrap gap-1">
+                            {line.words.map((w) => {
+                              const globalIdx = wordsList.indexOf(w)
+                              const isEditing = editingWordIdx === globalIdx
+                              return (
+                                <div
+                                  key={globalIdx}
+                                  className="group relative inline-flex items-center rounded bg-slate-800 px-1.5 py-0.5 border border-slate-700/80"
+                                >
+                                  {isEditing ? (
+                                    <input
+                                      type="text"
+                                      autoFocus
+                                      value={editingWordText}
+                                      onChange={(e) => setEditingWordText(e.target.value)}
+                                      onBlur={() => handleSaveWordEdit(globalIdx)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleSaveWordEdit(globalIdx)
+                                        if (e.key === 'Escape') setEditingWordIdx(null)
+                                      }}
+                                      className="bg-brand-900/60 text-white outline-none text-xs rounded px-1 max-w-[80px]"
+                                    />
+                                  ) : (
+                                    <span
+                                      onClick={() => {
+                                        setEditingWordIdx(globalIdx)
+                                        setEditingWordText(w.text)
+                                      }}
+                                      title="Click to edit word"
+                                      className="cursor-pointer text-slate-200 hover:text-brand-300"
+                                    >
+                                      {w.text}
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => handleDeleteWord(globalIdx)}
+                                    title="Delete word"
+                                    className="opacity-0 group-hover:opacity-100 ml-1 text-red-400 hover:text-red-300 transition"
+                                  >
+                                    <Trash2 size={10} />
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: Audio & Outro (Shell Placeholder for Phase 6B) */}
+          {/* TAB 3: Audio & Outro */}
           {activeTab === 'audio' && (
             <div className="p-5 space-y-4 text-xs text-slate-400">
               <div className="flex items-center justify-between">
@@ -1016,7 +1621,7 @@ export default function Editor() {
                   className="w-full accent-brand-500 cursor-pointer"
                 />
                 <p className="text-[11px] text-slate-500">
-                  Background music ducking and custom channel outro bumper options will be unlocked in Phase 6B.
+                  Background music ducking and custom channel outro bumper options will be unlocked in Phase 6C.
                 </p>
               </div>
             </div>
@@ -1029,7 +1634,6 @@ export default function Editor() {
       {/* ===================================================================== */}
       <footer className="h-32 border-t border-surface-border bg-surface px-6 py-3 flex flex-col justify-between shrink-0 z-20">
         <div className="flex items-center justify-between text-xs">
-          {/* Controls: Play/Pause, Time, Step */}
           <div className="flex items-center gap-3">
             <button
               onClick={togglePlay}
@@ -1042,7 +1646,6 @@ export default function Editor() {
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
 
-            {/* Loop Toggle */}
             <button
               onClick={() => setLoopTrim((l) => !l)}
               className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] border transition ${
@@ -1055,7 +1658,6 @@ export default function Editor() {
             </button>
           </div>
 
-          {/* Duration info & 60s warning badge */}
           <div className="flex items-center gap-3">
             <span className="text-slate-400 text-xs">
               Trimmed: <strong className="text-white font-mono">{trimmedDuration.toFixed(1)}s</strong>
@@ -1077,9 +1679,7 @@ export default function Editor() {
           </div>
         </div>
 
-        {/* Timeline Bar with Scrubber and In/Out Handles */}
         <div className="relative h-12 bg-slate-900 rounded-xl border border-surface-border p-1 flex items-center overflow-hidden">
-          {/* Active Trim Region Highlight */}
           <div
             className="absolute top-1 bottom-1 bg-brand-500/20 border-x-2 border-brand-500 rounded z-10 pointer-events-none"
             style={{
@@ -1088,7 +1688,6 @@ export default function Editor() {
             }}
           />
 
-          {/* Current Playhead */}
           <div
             className="absolute top-0 bottom-0 w-0.5 bg-white z-20 pointer-events-none shadow"
             style={{ left: `${(currentTime / Math.max(1, duration)) * 100}%` }}
@@ -1096,7 +1695,6 @@ export default function Editor() {
             <div className="w-2.5 h-2.5 rounded-full bg-white -ml-1 -mt-1 shadow" />
           </div>
 
-          {/* Interactive Range Input (Scrubber) */}
           <input
             type="range"
             min="0"
@@ -1105,20 +1703,17 @@ export default function Editor() {
             value={currentTime}
             onChange={(e) => {
               const val = parseFloat(e.target.value)
-              if (videoRef.current) videoRef.current.currentTime = val
-              setCurrentTime(val)
+              seekTo(val)
             }}
             className="w-full h-full opacity-0 cursor-pointer z-30 absolute inset-0"
           />
 
-          {/* In Handle Marker */}
           <div
             style={{ left: `${(editJson.trim.in / Math.max(1, duration)) * 100}%` }}
             className="absolute top-1 bottom-1 w-2 bg-brand-500 rounded-l cursor-ew-resize z-25 flex items-center justify-center"
             title={`In Point: ${editJson.trim.in.toFixed(1)}s (Press 'I' to set)`}
           />
 
-          {/* Out Handle Marker */}
           <div
             style={{ left: `${(editJson.trim.out / Math.max(1, duration)) * 100}%` }}
             className="absolute top-1 bottom-1 w-2 bg-brand-500 rounded-r cursor-ew-resize z-25 flex items-center justify-center -ml-2"
@@ -1139,4 +1734,58 @@ function formatTime(seconds: number): string {
   const s = Math.floor(seconds % 60)
   const ms = Math.floor((seconds % 1) * 10)
   return `${m}:${s.toString().padStart(2, '0')}.${ms}`
+}
+
+function stripHtml(input: string): string {
+  return input.replace(/<\/?[^>]+(>|$)/g, '')
+}
+
+function parseSubtitleTextToWords(rawContent: string): CaptionWord[] {
+  const clean = stripHtml(rawContent)
+  const words: CaptionWord[] = []
+
+  // Simple, robust SRT/VTT parser
+  // Matches timestamps like 00:00:01,234 --> 00:00:04,567 or 00:00:01.234 --> 00:00:04.567
+  const cueRegex = /(\d{1,2}:(?:\d{2}:)?\d{2}[,.]\d{2,3})\s*-->\s*(\d{1,2}:(?:\d{2}:)?\d{2}[,.]\d{2,3})/g
+  const blocks = clean.split(/\n\s*\n/)
+
+  for (const block of blocks) {
+    const match = cueRegex.exec(block)
+    if (!match) continue
+
+    const startSec = parseTimestamp(match[1])
+    const endSec = parseTimestamp(match[2])
+    const textLines = block
+      .replace(cueRegex, '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !/^\d+$/.test(l))
+    const cueText = textLines.join(' ')
+
+    const cueWords = cueText.split(/\s+/).filter((w) => w.trim().length > 0)
+    if (cueWords.length === 0) continue
+
+    const wordDuration = Math.max(0.15, (endSec - startSec) / cueWords.length)
+    for (let i = 0; i < cueWords.length; i++) {
+      const wStart = round2(startSec + i * wordDuration)
+      const wEnd = round2(Math.min(endSec, wStart + wordDuration))
+      words.push({
+        text: cueWords[i],
+        start: wStart,
+        end: wEnd,
+      })
+    }
+  }
+
+  return words
+}
+
+function parseTimestamp(ts: string): number {
+  const parts = ts.replace(',', '.').split(':')
+  if (parts.length === 3) {
+    return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2])
+  } else if (parts.length === 2) {
+    return parseFloat(parts[0]) * 60 + parseFloat(parts[1])
+  }
+  return parseFloat(ts) || 0
 }

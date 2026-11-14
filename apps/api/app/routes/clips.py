@@ -721,6 +721,18 @@ async def get_clip_edit(
     if c_end <= c_start:
         c_end = c_start + 30.0
 
+    # Extract default words from clip transcript if available
+    words: list[dict[str, Any]] = []
+    transcript_text = str(clip.get("transcript_text") or "").strip()
+    if transcript_text:
+        w_tokens = [w for w in transcript_text.split() if w.strip()]
+        if w_tokens:
+            step = max(0.2, (c_end - c_start) / len(w_tokens))
+            for idx, token in enumerate(w_tokens):
+                w_s = round(c_start + idx * step, 2)
+                w_e = round(min(c_end, w_s + step), 2)
+                words.append({"text": token, "start": w_s, "end": w_e})
+
     default_edit = {
         "trim": {
             "in": round(c_start, 2),
@@ -741,8 +753,22 @@ async def get_clip_edit(
         },
         "captions": {
             "enabled": True,
-            "style": "default",
-            "words": [],
+            "preset": "Firestorm Gold",
+            "words": words,
+            "style": {
+                "font": "Noto Sans",
+                "size": 42,
+                "color": "#FFFFFF",
+                "highlight_color": "#FFD700",
+                "outline_color": "#000000",
+                "outline_width": 3,
+                "box": False,
+                "box_color": "#00000088",
+                "words_per_line": 3,
+                "position": "lower_third",
+                "y_offset": 0,
+            },
+            "safe_zones": True,
         },
         "outro": None,
         "watermark": None,
@@ -853,5 +879,27 @@ async def auto_frame_clip(
             "bottom": {"x": 0.0, "y": 50.0, "w": 100.0, "h": 50.0},
         },
     }
+
+
+@router.get("/clips/{clip_id}/stream", summary="Stream clip video with HTTP Range (206) support and owner check")
+async def stream_clip_video(
+    clip_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Enforces clip ownership and streams video with HTTP Range (206 Partial Content) support."""
+    user_id = get_user_id(user)
+    _get_clip_record(clip_id, user_id)
+    from app.routes.youtube import _resolve_video_file_path
+    try:
+        file_path = _resolve_video_file_path(clip_id, None)
+    except Exception:
+        file_path = None
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video file not found")
+    return FileResponse(
+        file_path,
+        media_type="video/mp4",
+        headers={"Accept-Ranges": "bytes"}
+    )
 
 
