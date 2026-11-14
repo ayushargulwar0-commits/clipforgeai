@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     # -----------------------------------------------------------------------
     # CORS
     # -----------------------------------------------------------------------
-    ALLOWED_ORIGINS: list[str] = Field(
+    ALLOWED_ORIGINS: list[str] | str = Field(
         default=[
             "http://localhost:5173",
             "http://localhost:3000",
@@ -86,7 +86,7 @@ class Settings(BaseSettings):
             "http://clipforgeai.online",
             "http://www.clipforgeai.online",
         ],
-        description="Comma-separated list of allowed CORS origins",
+        description="Comma-separated list or JSON list of allowed CORS origins",
     )
 
     # -----------------------------------------------------------------------
@@ -152,6 +152,21 @@ class Settings(BaseSettings):
     # -----------------------------------------------------------------------
     # Validators
     # -----------------------------------------------------------------------
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        elif isinstance(v, list):
+            return v
+        return []
+
     @field_validator("STORAGE_BACKEND")
     @classmethod
     def validate_backend(cls, v: str) -> str:

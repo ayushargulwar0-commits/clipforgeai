@@ -41,6 +41,6 @@ def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8001))
     host = os.getenv("AUTOCLIP_HOST", "0.0.0.0")
     uvicorn.run("backend.internal_server:app", host=host, port=port, reload=False)
