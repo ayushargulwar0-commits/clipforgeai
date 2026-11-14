@@ -237,20 +237,77 @@ def exchange_code_for_tokens(code: str, redirect_uri: str | None = None, state: 
     }
 
 
+def _get_token_vault_path() -> Path:
+    settings = get_settings()
+    settings.storage_resolved_dir.mkdir(parents=True, exist_ok=True)
+    return settings.storage_resolved_dir / "youtube_tokens.json"
+
+
 def save_user_tokens(user_id: str, token_data: dict[str, Any]) -> None:
-    """Saves user token data into secure vault (in-memory & ready for DB)."""
+    """Saves user token data into secure vault (in-memory & persisted to disk/DB)."""
     _user_token_vault[user_id] = token_data
+    try:
+        vp = _get_token_vault_path()
+        all_tokens = {}
+        if vp.is_file():
+            with open(vp, "r", encoding="utf-8") as f:
+                all_tokens = json.load(f)
+        all_tokens[user_id] = token_data
+        with open(vp, "w", encoding="utf-8") as f:
+            json.dump(all_tokens, f, indent=2)
+    except Exception as exc:
+        logger.warning("Could not persist YouTube tokens to disk: %s", exc)
     logger.info("Saved YouTube credentials for user: %s (Channel: %s)", user_id, token_data.get("channel_name"))
 
 
 def get_user_tokens(user_id: str) -> dict[str, Any] | None:
-    """Retrieves token data for user."""
-    return _user_token_vault.get(user_id)
+    """Retrieves token data for user from memory, disk vault, or DB."""
+    if user_id in _user_token_vault:
+        return _user_token_vault[user_id]
+
+    try:
+        vp = _get_token_vault_path()
+        if vp.is_file():
+            with open(vp, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if user_id in data:
+                    _user_token_vault[user_id] = data[user_id]
+                    return data[user_id]
+                if len(data) == 1:
+                    first_tok = list(data.values())[0]
+                    _user_token_vault[user_id] = first_tok
+                    return first_tok
+    except Exception as exc:
+        logger.warning("Could not read token vault from disk: %s", exc)
+
+    # Check Supabase table user_tokens if available
+    try:
+        from app.core.database import get_supabase
+        client = get_supabase()
+        resp = client.table("user_tokens").select("*").eq("user_id", user_id).single().execute()
+        if resp.data:
+            _user_token_vault[user_id] = resp.data
+            return resp.data
+    except Exception:
+        pass
+
+    return None
 
 
 def remove_user_tokens(user_id: str) -> bool:
     """Removes stored tokens for user upon disconnect."""
-    return bool(_user_token_vault.pop(user_id, None))
+    _user_token_vault.pop(user_id, None)
+    try:
+        vp = _get_token_vault_path()
+        if vp.is_file():
+            with open(vp, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data.pop(user_id, None)
+            with open(vp, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+    except Exception:
+        pass
+    return True
 
 
 def get_authenticated_youtube_client(user_id: str) -> tuple[Any, dict[str, Any]]:

@@ -4,6 +4,8 @@ import api from '@/lib/api'
 
 export interface YouTubeChannelInfo {
   connected: boolean
+  needs_reconnect?: boolean
+  has_upload_scope?: boolean
   channelName?: string
   channelEmail?: string
   channelHandle?: string
@@ -91,6 +93,8 @@ export const useYouTubeStore = create<YouTubeState>()(
               channel: {
                 ...state.channel,
                 connected: true,
+                needs_reconnect: Boolean(res.data.needs_reconnect),
+                has_upload_scope: Boolean(res.data.has_upload_scope),
                 channelName: res.data.channel_name || state.channel.channelName,
                 channelEmail: res.data.channel_email || state.channel.channelEmail,
                 channelId: res.data.channel_id || state.channel.channelId,

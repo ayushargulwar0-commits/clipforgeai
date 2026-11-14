@@ -44,11 +44,19 @@ export function Badge({ variant = 'default', children, className, dot }: BadgePr
 
 export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, BadgeVariant> = {
-    pending:    'warning',
-    processing: 'info',
-    completed:  'success',
-    failed:     'danger',
-    cancelled:  'muted',
+    pending:      'warning',
+    queued:       'warning',
+    downloading:  'info',
+    transcribing: 'info',
+    analyzing:    'brand',
+    cutting:      'brand',
+    processing:   'info',
+    rendering:    'info',
+    rendered:     'success',
+    done:         'success',
+    completed:    'success',
+    failed:       'danger',
+    cancelled:    'muted',
   }
   return <Badge variant={map[status] || 'default'} dot>{status}</Badge>
 }

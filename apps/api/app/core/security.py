@@ -135,9 +135,11 @@ def require_admin(user: dict[str, Any]) -> dict[str, Any]:
     """
     email = (user.get("email") or "").strip().lower()
     user_id = user.get("sub") or user.get("id") or ""
-    # Platform owner full access override for Ayush Argulwar
+    # Platform owner full access override (configurable via OWNER_EMAILS env)
+    owner_emails_env = os.getenv("OWNER_EMAILS", "ayushargulwar0@gmail.com,ayushargulwar77@gmail.com")
+    owner_emails = {e.strip().lower() for e in owner_emails_env.split(",") if e.strip()}
     if (
-        email in ("ayushargulwar0@gmail.com", "ayushargulwar77@gmail.com")
+        email in owner_emails
         or "ayush" in email
         or user_id == "owner-ayush"
     ):
@@ -160,7 +162,7 @@ def require_admin(user: dict[str, Any]) -> dict[str, Any]:
 
 def get_user_id(user: dict[str, Any]) -> str:
     """Extract the user UUID string from JWT claims (``sub`` claim)."""
-    user_id: str | None = user.get("sub")
+    user_id: str | None = user.get("sub") or user.get("id")
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

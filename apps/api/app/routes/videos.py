@@ -297,10 +297,45 @@ async def upload_from_url(
 ):
     settings = get_settings()
     user_id = get_user_id(user)
+    user_email = user.get("email") or ""
     client = get_supabase()
 
-    video_id = str(uuid.uuid4())
     logger.info("Ingesting video from URL for user %s: %s", user_id, body.url)
+
+    # If YouTube URL, dispatch to AutoClip engine
+    youtube_id = extract_youtube_id(body.url)
+    if youtube_id or "youtube.com" in body.url or "youtu.be" in body.url:
+        from app.services.autoclip_service import get_autoclip_service, is_owner
+        from app.services.usage_service import check_credits
+
+        if not is_owner(user_id, user_email):
+            has_credits = await check_credits(user_id, cost=1)
+            if not has_credits:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail="Insufficient credits. Please upgrade your plan or top up credits.",
+                )
+
+        ac_service = get_autoclip_service()
+        ac_job = await ac_service.submit_job(
+            youtube_url=body.url,
+            user_id=user_id,
+            user_email=user_email,
+            max_clips=5,
+            min_sec=20,
+            max_sec=60,
+            burn_captions=True,
+        )
+        return {
+            "job_id": ac_job.get("id"),
+            "status": "queued",
+            "progress": 0,
+            "youtube_id": youtube_id,
+            "title": f"YouTube Video ({youtube_id})",
+            "message": "AutoClip pipeline initiated. Generating 9:16 vertical Shorts with animated captions.",
+        }
+
+    video_id = str(uuid.uuid4())
 
     try:
         download_info = download_video_from_url(body.url, settings.storage_videos_dir)

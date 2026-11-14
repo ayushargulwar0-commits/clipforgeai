@@ -25,6 +25,7 @@ import {
 interface YouTubePublishModalProps {
   open: boolean
   onClose: () => void
+  initialMode?: 'upload' | 'schedule'
   clip: {
     id: string
     title: string
@@ -32,15 +33,16 @@ interface YouTubePublishModalProps {
     hook?: string
     duration?: number
     transcript_text?: string
+    video_url?: string
   } | null
 }
 
-export function YouTubePublishModal({ open, onClose, clip }: YouTubePublishModalProps) {
+export function YouTubePublishModal({ open, onClose, clip, initialMode = 'upload' }: YouTubePublishModalProps) {
   const { success, error: toastError } = useToast()
   const { channel, uploadNow, scheduleUpload, disconnectAccount, loading } = useYouTubeStore()
 
   const [connectModalOpen, setConnectModalOpen] = useState(false)
-  const [mode, setMode] = useState<'upload' | 'schedule'>('upload')
+  const [mode, setMode] = useState<'upload' | 'schedule'>(initialMode)
   const [title, setTitle] = useState(
     clip ? `${clip.title.slice(0, 70)} #Shorts` : 'Viral Moment #Shorts'
   )
@@ -82,12 +84,13 @@ export function YouTubePublishModal({ open, onClose, clip }: YouTubePublishModal
           privacy,
         })
         if (res.success) {
+          const liveUrl = res.youtube_url || 'https://studio.youtube.com'
           setPublishedResult({
-            url: res.youtube_url || 'https://studio.youtube.com',
+            url: liveUrl,
             studioUrl: res.studio_url || 'https://studio.youtube.com',
             title,
           })
-          success('Published to YouTube!', 'Your short-form video was queued and sent to your YouTube Studio.')
+          success('Published to YouTube Shorts!', `Live video link: ${liveUrl}`)
         }
       } else {
         const scheduledDateTime = `${scheduleDate}T${scheduleTime}:00`
@@ -176,9 +179,15 @@ export function YouTubePublishModal({ open, onClose, clip }: YouTubePublishModal
                           : 'Connect YouTube Channel'}
                       </span>
                       {channel.connected ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                          <CheckCircle2 size={10} /> Active
-                        </span>
+                        channel.needs_reconnect ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                            <AlertCircle size={10} /> Reconnect Needed
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                            <CheckCircle2 size={10} /> Active
+                          </span>
+                        )
                       ) : (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
                           Sign In Required
@@ -187,20 +196,22 @@ export function YouTubePublishModal({ open, onClose, clip }: YouTubePublishModal
                     </div>
                     <p className="text-xs text-slate-400 mt-0.5">
                       {channel.connected
-                        ? `${channel.channelEmail || channel.channelHandle || 'Verified Account'} • Ready for 1-click publishing`
+                        ? channel.needs_reconnect
+                          ? 'Missing upload permissions. Please click Reconnect YouTube to grant access.'
+                          : `${channel.channelEmail || channel.channelHandle || 'Verified Account'} • Ready for 1-click publishing`
                         : 'Sign in with your YouTube account to upload directly'}
                     </p>
                   </div>
                 </div>
 
-                {!channel.connected ? (
+                {!channel.connected || channel.needs_reconnect ? (
                   <Button
                     size="xs"
                     onClick={() => setConnectModalOpen(true)}
                     loading={loading}
                     className="bg-red-600 hover:bg-red-500 text-white font-bold gap-1.5 shrink-0 shadow-lg shadow-red-600/20"
                   >
-                    <Youtube size={14} /> Sign In & Link Channel
+                    <Youtube size={14} /> {channel.needs_reconnect ? 'Reconnect YouTube' : 'Sign In & Link Channel'}
                   </Button>
                 ) : (
                   <div className="flex items-center gap-2 shrink-0">

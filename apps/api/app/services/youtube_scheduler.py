@@ -98,6 +98,22 @@ def resolve_post_video_file(clip_id: str | None, direct_path: str | None) -> Pat
             return p
 
     if clip_id:
+        try:
+            from app.core.database import get_supabase
+            client = get_supabase()
+            c_row = client.table("clips").select("rendered_path, source_url").eq("id", clip_id).single().execute()
+            if c_row.data:
+                r_path = c_row.data.get("rendered_path")
+                if r_path and Path(r_path).is_file():
+                    return Path(r_path)
+                s_url = c_row.data.get("source_url")
+                if s_url:
+                    name = Path(s_url).name
+                    if (settings.storage_clips_dir / name).is_file():
+                        return settings.storage_clips_dir / name
+        except Exception:
+            pass
+
         candidates = [
             settings.storage_clips_dir / f"{clip_id}.mp4",
             settings.storage_clips_dir / clip_id,
@@ -219,44 +235,31 @@ class YouTubeSchedulerWorker:
                     update_post_status(post_id, {"status": "failed", "error": err_msg})
                     continue
 
-                # 4. Perform upload (in executor thread to not block event loop)
+                # 4. Perform upload (calling real YouTube Data API v3)
                 try:
-                    is_mock = "mock" in str(tokens.get("access_token", ""))
-                    if is_mock:
-                        # Simulation / Mock mode
-                        shorts_url = "https://studio.youtube.com/channel/videos/shorts"
-                        update_post_status(post_id, {
-                            "status": "published",
-                            "video_id": "shorts_queued",
-                            "youtube_url": shorts_url,
-                            "published_at": datetime.now(timezone.utc).isoformat(),
-                            "error": None,
-                        })
-                        logger.info("Scheduler: Post %s published successfully (simulated): %s", post_id, shorts_url)
-                    else:
-                        loop = asyncio.get_running_loop()
-                        upload_res = await loop.run_in_executor(
-                            None,
-                            lambda: upload_short_to_youtube(
-                                user_id=user_id,
-                                file_path=video_file,
-                                title=post.get("title") or "Viral Short",
-                                description=post.get("description") or "",
-                                tags=post.get("tags") or ["Shorts", "AI"],
-                                privacy_status=post.get("privacy") or "public",
-                            ),
-                        )
-                        update_post_status(post_id, {
-                            "status": "published",
-                            "video_id": upload_res.get("video_id"),
-                            "youtube_url": upload_res.get("shorts_url"),
-                            "studio_url": upload_res.get("studio_url"),
-                            "published_at": datetime.now(timezone.utc).isoformat(),
-                            "error": None,
-                        })
-                        logger.info("Scheduler: Post %s published to YouTube! URL: %s", post_id, upload_res.get("shorts_url"))
-
-                    processed.append(post)
+                    from app.services.youtube_uploader import YouTubeUploader
+                    loop = asyncio.get_running_loop()
+                    upload_res = await loop.run_in_executor(
+                        None,
+                        lambda: YouTubeUploader.upload_short(
+                            user_id=user_id,
+                            shorts_path=video_file,
+                            title=post.get("title") or "Viral Short",
+                            description=post.get("description") or "",
+                            tags=post.get("tags") or ["Shorts", "AI"],
+                            privacy_status=post.get("privacy") or "public",
+                        ),
+                    )
+                    updated_res = update_post_status(post_id, {
+                        "status": "published",
+                        "video_id": upload_res.get("video_id"),
+                        "youtube_url": upload_res.get("shorts_url"),
+                        "studio_url": upload_res.get("studio_url"),
+                        "published_at": datetime.now(timezone.utc).isoformat(),
+                        "error": None,
+                    })
+                    logger.info("Scheduler: Post %s published to YouTube! URL: %s", post_id, upload_res.get("shorts_url"))
+                    processed.append(updated_res or post)
 
                 except Exception as upload_exc:
                     err_msg = str(upload_exc)

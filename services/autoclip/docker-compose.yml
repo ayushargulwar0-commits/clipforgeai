@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  # Redis cache and task queue
+  redis:
+    image: redis:7-alpine
+    container_name: autoclip-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # AutoClip Internal Engine API
+  autoclip-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: clipforge/autoclip-engine:latest
+    container_name: autoclip-api
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - clips_data:/data/clips
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SHARED_CLIPS_DIR=/data/clips
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - API_MODEL_NAME=${API_MODEL_NAME:-gemini-1.5-flash}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - AUTOCLIP_INTERNAL_TOKEN=${AUTOCLIP_INTERNAL_TOKEN:-clipforge-internal-secret-2026}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+    command: ["python", "-m", "uvicorn", "backend.internal_server:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # AutoClip Background Task Worker
+  autoclip-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: clipforge/autoclip-engine:latest
+    container_name: autoclip-worker
+    restart: unless-stopped
+    volumes:
+      - clips_data:/data/clips
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SHARED_CLIPS_DIR=/data/clips
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - API_MODEL_NAME=${API_MODEL_NAME:-gemini-1.5-flash}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - AUTOCLIP_INTERNAL_TOKEN=${AUTOCLIP_INTERNAL_TOKEN:-clipforge-internal-secret-2026}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+    command: ["celery", "-A", "backend.core.celery_app", "worker", "--loglevel=info", "--concurrency=2", "-Q", "celery,processing,video,upload"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:
+  clips_data:
+    name: clipforge_shared_clips

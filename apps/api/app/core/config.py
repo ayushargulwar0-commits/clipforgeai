@@ -128,6 +128,18 @@ class Settings(BaseSettings):
     )
 
     # -----------------------------------------------------------------------
+    # AutoClip Microservice
+    # -----------------------------------------------------------------------
+    AUTOCLIP_SERVICE_URL: str = Field(
+        default="http://localhost:8001",
+        description="Internal AutoClip service endpoint",
+    )
+    AUTOCLIP_INTERNAL_TOKEN: str = Field(
+        default="clipforge-internal-secret-2026",
+        description="Internal token for authenticating with AutoClip service",
+    )
+
+    # -----------------------------------------------------------------------
     # Rate limiting
     # -----------------------------------------------------------------------
     RATE_LIMIT_DEFAULT: str = Field(

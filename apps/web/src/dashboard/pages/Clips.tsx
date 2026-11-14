@@ -42,7 +42,18 @@ export interface ClipItem {
   aspect_ratio: '9:16' | '16:9' | '1:1'
   score: number
   score_explanation?: string
-  status: 'detected' | 'rendering' | 'rendered' | 'failed'
+  status:
+    | 'detected'
+    | 'rendering'
+    | 'rendered'
+    | 'failed'
+    | 'queued'
+    | 'downloading'
+    | 'transcribing'
+    | 'analyzing'
+    | 'cutting'
+    | 'done'
+  progress?: number
   youtube_id?: string
   video_url?: string
   thumbnail_url?: string
@@ -125,6 +136,8 @@ export default function Clips() {
 
   const [selectedClip, setSelectedClip] = useState<ClipItem | null>(null)
   const [publishClip, setPublishClip] = useState<ClipItem | null>(null)
+  const [publishMode, setPublishMode] = useState<'upload' | 'schedule'>('upload')
+  const [termsAgreed, setTermsAgreed] = useState(false)
   const [renderingClipId, setRenderingClipId] = useState<string | null>(null)
   const [detectModalOpen, setDetectModalOpen] = useState(false)
   const [inputUrl, setInputUrl] = useState('')
@@ -166,6 +179,96 @@ export default function Clips() {
         url: url.trim(),
         auto_detect_clips: true,
       })
+
+      // Handle AutoClip async pipeline job
+      if (res.data?.job_id) {
+        const jobId = res.data.job_id
+        const tempId = 'job-' + jobId
+        const pendingItem: ClipItem = {
+          id: tempId,
+          title: res.data.title || ('Processing YouTube Video ' + (ytId ? '(' + ytId + ')' : '')),
+          description: 'AutoClip AI pipeline running: face detection, smart crop, and captions...',
+          hook: 'AI identifying viral hooks...',
+          start_time: 0,
+          end_time: 30,
+          duration: 30,
+          aspect_ratio: '9:16',
+          score: 95,
+          status: 'queued',
+          progress: 5,
+          youtube_id: ytId || undefined,
+          thumbnail_url: ytId ? 'https://img.youtube.com/vi/' + ytId + '/hqdefault.jpg' : undefined,
+        }
+        setClips((prev) => [pendingItem, ...prev.filter((c) => c.id !== tempId)])
+        setDetectModalOpen(false)
+        setInputUrl('')
+        info('AutoClip Processing', 'Tracking stages: download -> transcribe -> analyze -> cut')
+
+        const pollInterval = setInterval(async () => {
+          try {
+            const jobRes = await api.get('/jobs/' + jobId)
+            const jobData = jobRes.data
+            const curStatus = jobData.status || 'processing'
+            const curProgress = jobData.progress || 0
+
+            setClips((prev) =>
+              prev.map((c) =>
+                c.id === tempId
+                  ? {
+                      ...c,
+                      status: curStatus,
+                      progress: curProgress,
+                      description: 'AutoClip pipeline: ' + curStatus.toUpperCase() + ' (' + curProgress + '%)',
+                    }
+                  : c
+              )
+            )
+
+            if (curStatus === 'done' || curStatus === 'completed') {
+              clearInterval(pollInterval)
+              setDetecting(false)
+              const rawClips = jobData.clips || jobData.result?.clips || []
+              if (rawClips.length > 0) {
+                const finishedClips: ClipItem[] = rawClips.map((c: any) => ({
+                  id: c.id || ('clip-' + Math.random().toString(36).substr(2, 9)),
+                  title: c.title,
+                  description: c.description,
+                  hook: c.hook || c.hook_text,
+                  transcript_text: c.transcript_text || c.transcript,
+                  start_time: c.start_time || c.start || 0,
+                  end_time: c.end_time || c.end || 30,
+                  duration: c.duration || 30,
+                  aspect_ratio: '9:16',
+                  score: Math.round(c.score || 92),
+                  status: 'rendered',
+                  youtube_id: ytId || undefined,
+                  video_url: c.source_url || c.rendered_path || c.video_url,
+                  thumbnail_url: ytId
+                    ? 'https://img.youtube.com/vi/' + ytId + '/hqdefault.jpg'
+                    : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
+                }))
+                setClips((prev) => [...finishedClips, ...prev.filter((c) => c.id !== tempId)])
+                success('AutoClip Shorts Ready!', 'Generated ' + finishedClips.length + ' 9:16 vertical Shorts with captions.')
+                setSelectedClip(finishedClips[0])
+              }
+            } else if (curStatus === 'failed') {
+              clearInterval(pollInterval)
+              setDetecting(false)
+              setClips((prev) =>
+                prev.map((c) =>
+                  c.id === tempId
+                    ? { ...c, status: 'failed', description: jobData.error_message || 'AutoClip failed.' }
+                    : c
+                )
+              )
+              toastError('Job Failed', jobData.error_message || 'Could not extract clips.')
+            }
+          } catch (pollErr) {
+            console.warn('Poll error:', pollErr)
+          }
+        }, 1500)
+        return
+      }
 
       if (res.data?.clips && res.data.clips.length > 0) {
         const newClips: ClipItem[] = res.data.clips.map((c: any) => ({
@@ -404,12 +507,26 @@ export default function Clips() {
                       )}
                     </div>
 
-                    {/* Prominent Play Button */}
-                    <div className="absolute inset-0 flex items-center justify-center relative z-10">
-                      <div className="w-14 h-14 rounded-full bg-brand-600/90 text-white flex items-center justify-center shadow-brand group-hover:scale-110 group-hover:bg-brand-500 transition-all">
-                        <Play size={22} fill="white" className="ml-1" />
+                    {/* Processing Overlay OR Prominent Play Button */}
+                    {['queued', 'downloading', 'transcribing', 'analyzing', 'cutting'].includes(clip.status) ? (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-black/80 backdrop-blur-sm z-20 text-center">
+                        <div className="w-10 h-10 rounded-full border-4 border-brand-500/30 border-t-brand-400 animate-spin mb-2" />
+                        <span className="text-[11px] font-bold text-white uppercase tracking-wider mb-1">
+                          {clip.status}...
+                        </span>
+                        {clip.progress !== undefined && (
+                          <div className="w-3/4 bg-white/10 rounded-full h-1.5 overflow-hidden mt-1">
+                            <div className="bg-brand-500 h-full transition-all duration-300" style={{ width: `${clip.progress}%` }} />
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center relative z-10">
+                        <div className="w-14 h-14 rounded-full bg-brand-600/90 text-white flex items-center justify-center shadow-brand group-hover:scale-110 group-hover:bg-brand-500 transition-all">
+                          <Play size={22} fill="white" className="ml-1" />
+                        </div>
+                      </div>
+                    )}
 
                     {/* Bottom Hook Callout */}
                     <div className="relative z-10 bg-black/85 backdrop-blur p-2.5 rounded-lg border border-white/10 text-xs text-slate-200">
@@ -451,11 +568,27 @@ export default function Clips() {
                   <Button
                     size="xs"
                     variant="outline"
-                    onClick={() => setPublishClip(clip)}
+                    onClick={() => {
+                      setPublishMode('upload')
+                      setPublishClip(clip)
+                    }}
                     className="gap-1 text-xs text-red-400 hover:text-red-300 hover:border-red-500/40"
-                    title="Publish or Schedule to YouTube Shorts"
+                    title="Quick Upload to YouTube Shorts"
                   >
-                    <Youtube size={12} /> YouTube
+                    <Youtube size={12} /> Upload Now
+                  </Button>
+
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      setPublishMode('schedule')
+                      setPublishClip(clip)
+                    }}
+                    className="gap-1 text-xs text-slate-400 hover:text-slate-200"
+                    title="Schedule publication to YouTube Shorts"
+                  >
+                    <Clock size={12} /> Schedule
                   </Button>
 
                   {clip.status === 'rendered' ? (
@@ -627,6 +760,10 @@ export default function Clips() {
         <form
           onSubmit={(e) => {
             e.preventDefault()
+            if (!termsAgreed) {
+              toastError('Terms Confirmation Required', 'Please confirm that you own this video or have permission to clip and publish it.')
+              return
+            }
             processVideoUrl(inputUrl)
           }}
           className="p-6 space-y-4"
@@ -644,6 +781,21 @@ export default function Clips() {
             <p className="text-[11px] text-slate-500">
               Supports standard YouTube links, YouTube Shorts, or direct MP4 streams.
             </p>
+          </div>
+
+          <div className="pt-1">
+            <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-300">
+              <input
+                type="checkbox"
+                required
+                checked={termsAgreed}
+                onChange={(e) => setTermsAgreed(e.target.checked)}
+                className="mt-0.5 rounded border-surface-border text-brand-500 focus:ring-brand-500 cursor-pointer"
+              />
+              <span className="leading-tight">
+                I own this video or have permission to clip and publish it.
+              </span>
+            </label>
           </div>
 
           <div className="p-3 rounded-xl bg-surface border border-surface-border text-xs text-slate-400 space-y-1">
@@ -674,6 +826,7 @@ export default function Clips() {
         open={!!publishClip}
         onClose={() => setPublishClip(null)}
         clip={publishClip}
+        initialMode={publishMode}
       />
     </div>
   )

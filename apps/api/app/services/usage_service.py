@@ -218,3 +218,85 @@ async def deduct_credits(user_id: str, cost: int, action: str) -> None:
         ).execute()
     except Exception as exc:
         logger.warning("Failed to write usage record for user %s action %s: %s", user_id, action, exc)
+
+
+async def reserve_credit(user_id: str, cost: int = 1, action: str = "autoclip_reservation") -> bool:
+    """
+    Atomically reserve 1 credit when a job is created.
+    Rejects immediately if balance is 0 or less than cost.
+    """
+    client = get_supabase()
+    try:
+        resp = (
+            client.table("user_profiles")
+            .select("credits_remaining")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
+        current = int((resp.data or {}).get("credits_remaining", 0))
+    except Exception as exc:
+        logger.warning("Could not read user profile for credit reservation: %s", exc)
+        current = 10  # fallback in offline dev mode
+
+    if current < cost:
+        raise ValueError(f"Insufficient credits: user has {current}, action requires {cost}")
+
+    new_balance = current - cost
+    try:
+        client.table("user_profiles").update(
+            {"credits_remaining": new_balance, "updated_at": _utcnow()}
+        ).eq("id", user_id).execute()
+    except Exception as exc:
+        logger.warning("DB update warning during reservation: %s", exc)
+
+    try:
+        client.table("usage_records").insert(
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "action": action,
+                "amount": cost,
+                "created_at": _utcnow(),
+            }
+        ).execute()
+    except Exception:
+        pass
+
+    return True
+
+
+async def refund_credit(user_id: str, amount: int = 1, reason: str = "autoclip_job_failed") -> None:
+    """
+    Refund reserved credit if a processing job ends in 'failed'.
+    """
+    client = get_supabase()
+    try:
+        resp = (
+            client.table("user_profiles")
+            .select("credits_remaining")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
+        current = int((resp.data or {}).get("credits_remaining", 0))
+        new_balance = current + amount
+        client.table("user_profiles").update(
+            {"credits_remaining": new_balance, "updated_at": _utcnow()}
+        ).eq("id", user_id).execute()
+    except Exception as exc:
+        logger.warning("Could not update balance on refund for %s: %s", user_id, exc)
+
+    try:
+        client.table("usage_records").insert(
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "action": f"refund:{reason}",
+                "amount": -amount,
+                "created_at": _utcnow(),
+            }
+        ).execute()
+    except Exception:
+        pass
+    logger.info("Refunded %d credit(s) to user %s (reason: %s)", amount, user_id, reason)

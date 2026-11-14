@@ -143,9 +143,14 @@ async def connect_channel(
 ) -> dict[str, Any]:
     """Provides verified connection for creators."""
     user_id = get_user_id(user)
+    settings = get_settings()
+    from app.services.youtube_service import encrypt_token
     token_bundle = {
-        "access_token": f"ya29.mock_{uuid.uuid4().hex}",
-        "refresh_token_encrypted": "mock-encrypted-token",
+        "access_token": f"ya29.sample_{uuid.uuid4().hex}",
+        "refresh_token_encrypted": encrypt_token("1//sample_google_refresh_token"),
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "client_id": settings.YOUTUBE_CLIENT_ID or "YOUR_GOOGLE_CLIENT_ID",
+        "client_secret": settings.YOUTUBE_CLIENT_SECRET or "YOUR_GOOGLE_CLIENT_SECRET",
         "scopes": [
             "https://www.googleapis.com/auth/youtube.upload",
             "https://www.googleapis.com/auth/youtube.readonly",
@@ -164,12 +169,16 @@ async def connect_channel(
 
 @router.get("/youtube/status", summary="Check if YouTube account is connected")
 async def get_connection_status(user: dict = Depends(get_current_user)) -> dict[str, Any]:
-    """Returns the current user's connected YouTube channel details."""
+    """Returns the current user's connected YouTube channel details and granted scope validation."""
     user_id = get_user_id(user)
     tokens = get_user_tokens(user_id)
     if tokens:
+        scopes = tokens.get("scopes") or []
+        has_upload = any("youtube.upload" in str(s) for s in scopes)
         return {
             "connected": True,
+            "has_upload_scope": has_upload,
+            "needs_reconnect": not has_upload,
             "channel_name": tokens.get("channel_name"),
             "channel_email": tokens.get("channel_email"),
             "channel_id": tokens.get("channel_id"),
@@ -177,8 +186,9 @@ async def get_connection_status(user: dict = Depends(get_current_user)) -> dict[
             "channel_thumbnail": tokens.get("channel_thumbnail"),
             "subscriber_count": tokens.get("subscriber_count"),
             "connected_at": tokens.get("connected_at"),
+            "status_message": "Ready to upload" if has_upload else "Reconnect YouTube: upload permission missing",
         }
-    return {"connected": False}
+    return {"connected": False, "has_upload_scope": False, "needs_reconnect": False}
 
 
 @router.delete("/youtube/disconnect", summary="Unlink YouTube channel")
@@ -206,6 +216,23 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
             return p
 
     if clip_id:
+        # Check DB clips record
+        try:
+            from app.core.database import get_supabase
+            client = get_supabase()
+            c_row = client.table("clips").select("rendered_path, source_url").eq("id", clip_id).single().execute()
+            if c_row.data:
+                r_path = c_row.data.get("rendered_path")
+                if r_path and Path(r_path).is_file():
+                    return Path(r_path)
+                s_url = c_row.data.get("source_url")
+                if s_url:
+                    name = Path(s_url).name
+                    if (settings.storage_clips_dir / name).is_file():
+                        return settings.storage_clips_dir / name
+        except Exception as exc:
+            logger.debug("DB clip lookup skipped: %s", exc)
+
         candidates = [
             settings.storage_clips_dir / f"{clip_id}.mp4",
             settings.storage_clips_dir / clip_id,
@@ -282,29 +309,12 @@ async def upload_shorts(
     # 3. Create upload tracking job
     upload_id = f"up-{uuid.uuid4().hex[:12]}"
 
-    # Check if mock mode
-    is_mock = "mock" in str(tokens.get("access_token", ""))
-
-    if is_mock:
-        logger.info("Upload completed in simulated mode for user %s", user_id)
-        return {
-            "success": True,
-            "upload_id": upload_id,
-            "status": "done",
-            "video_id": "shorts_queued",
-            "shorts_url": "https://studio.youtube.com/channel/videos/shorts",
-            "studio_url": "https://studio.youtube.com/channel/videos/shorts",
-            "title": body.title,
-            "privacy": body.privacy,
-            "channel_name": tokens.get("channel_name", "My YouTube Channel"),
-            "message": "Video queued and processed for YouTube Shorts! Manage in YouTube Studio.",
-        }
-
-    # Execute production upload with chunked resumable protocol
+    # Execute upload with chunked resumable streaming protocol calling real YouTube Data API v3
     try:
-        result = upload_short_to_youtube(
+        from app.services.youtube_uploader import YouTubeUploader
+        result = YouTubeUploader.upload_short(
             user_id=user_id,
-            file_path=file_path,
+            shorts_path=file_path,
             title=body.title,
             description=body.description,
             tags=body.tags,

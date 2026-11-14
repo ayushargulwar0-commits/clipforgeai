@@ -18,6 +18,7 @@ build/
 
 # Storage / Uploads
 storage/
+services/autoclip/data/
 *.mp4
 *.mov
 *.wav
