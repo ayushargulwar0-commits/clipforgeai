@@ -29,18 +29,26 @@ import {
   EyeOff,
   Scissors,
   Plus,
+  Volume2,
+  VolumeX,
   ShieldAlert,
+  Sliders,
+  Check,
+  Bell,
+  Share2,
 } from 'lucide-react'
 import api from '@/lib/api'
 
 // ---------------------------------------------------------------------------
-// Types & Schema (Phase 6B Version 1)
+// Types & Schema (Phase 6C Version 1)
 // ---------------------------------------------------------------------------
 
 export type AspectRatio = '9:16' | '1:1' | '4:5'
 export type FramingMode = 'crop' | 'split' | 'blur_fit'
 export type BackgroundType = 'blur' | 'solid' | 'image'
 export type CaptionPosition = 'top' | 'middle' | 'lower_third'
+export type WatermarkPosition = 'tl' | 'tr' | 'bl' | 'br'
+export type OutroTemplate = 'subscribe' | 'follow' | 'custom_text'
 
 export interface CropBox {
   x: number // 0-100 percentage
@@ -85,7 +93,7 @@ export interface CaptionStyle {
   outline_width: number
   box: boolean
   box_color: string
-  words_per_line: number // 1 to 4
+  words_per_line: number
   position: CaptionPosition
   y_offset: number
 }
@@ -98,14 +106,57 @@ export interface CaptionsConfig {
   safe_zones: boolean
 }
 
+export interface MusicConfig {
+  asset_id: string | null
+  volume: number // 0-100
+  fade_in_s: number
+  fade_out_s: number
+  duck_under_speech: boolean
+}
+
+export interface AudioConfig {
+  original_volume: number // 0-200
+  music: MusicConfig
+}
+
+export interface WatermarkConfig {
+  asset_id: string | null
+  position: WatermarkPosition
+  size_pct: number // 5-40
+  opacity: number // 10-100
+  margin_pct: number // 0-20
+}
+
+export interface OutroConfig {
+  enabled: boolean
+  template: OutroTemplate
+  text: string
+  duration_s: number // 1-5
+  bg_color: string
+  text_color: string
+}
+
 export interface EditJson {
   trim: TrimConfig
   aspect: AspectRatio
   framing: FramingConfig
   background: BackgroundConfig
   captions: CaptionsConfig
-  outro: any
-  watermark: any
+  audio: AudioConfig
+  watermark: WatermarkConfig | null
+  outro: OutroConfig | null
+}
+
+export interface AssetRecord {
+  id: string
+  user_id: string
+  name: string
+  asset_type: 'image' | 'audio'
+  file_path: string
+  file_url: string
+  size_bytes: number
+  mime_type: string
+  created_at: string
 }
 
 // ---------------------------------------------------------------------------
@@ -224,8 +275,25 @@ const DEFAULT_EDIT_JSON: EditJson = {
     style: STYLE_PRESETS['Firestorm Gold'],
     safe_zones: true,
   },
-  outro: null,
+  audio: {
+    original_volume: 100,
+    music: {
+      asset_id: null,
+      volume: 50,
+      fade_in_s: 1.0,
+      fade_out_s: 1.5,
+      duck_under_speech: true,
+    },
+  },
   watermark: null,
+  outro: {
+    enabled: false,
+    template: 'subscribe',
+    text: 'Subscribe for More!',
+    duration_s: 3,
+    bg_color: '#0A0A0F',
+    text_color: '#FFFFFF',
+  },
 }
 
 const SAMPLE_HORIZONTAL_VIDEO =
@@ -253,11 +321,17 @@ export default function Editor() {
   const [clipTitle, setClipTitle] = useState<string>('My Short Clip')
 
   // UI State
-  const [activeTab, setActiveTab] = useState<'framing' | 'text' | 'audio'>('framing')
+  const [activeTab, setActiveTab] = useState<'framing' | 'text' | 'audio' | 'media'>('framing')
   const [isSaving, setIsSaving] = useState(false)
   const [isAutoFraming, setIsAutoFraming] = useState(false)
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [showSafeZoneOverlay, setShowSafeZoneOverlay] = useState(true)
+
+  // Assets Management State
+  const [userAssets, setUserAssets] = useState<AssetRecord[]>([])
+  const [isUploadingAsset, setIsUploadingAsset] = useState(false)
+  const logoUploadRef = useRef<HTMLInputElement>(null)
+  const audioUploadRef = useRef<HTMLInputElement>(null)
 
   // Transcript Search & Editing State
   const [searchFilter, setSearchFilter] = useState('')
@@ -273,6 +347,7 @@ export default function Editor() {
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const bgVideoRef = useRef<HTMLVideoElement>(null)
+  const musicAudioRef = useRef<HTMLAudioElement>(null)
   const sourceBoxRef = useRef<HTMLDivElement>(null)
 
   // -------------------------------------------------------------------------
@@ -312,6 +387,20 @@ export default function Editor() {
   }, [history, historyIdx])
 
   // -------------------------------------------------------------------------
+  // Load User Assets
+  // -------------------------------------------------------------------------
+  const fetchUserAssets = useCallback(async () => {
+    try {
+      const res = await api.get('/assets')
+      if (res.data) setUserAssets(res.data)
+    } catch (_) {}
+  }, [])
+
+  useEffect(() => {
+    fetchUserAssets()
+  }, [fetchUserAssets])
+
+  // -------------------------------------------------------------------------
   // 1. Data Loading: GET /clips/{id}/edit & Clip Details
   // -------------------------------------------------------------------------
   useEffect(() => {
@@ -332,7 +421,6 @@ export default function Editor() {
         const editRes = await api.get(`/clips/${clipId}/edit`)
         if (editRes?.data?.edit_json && isMounted) {
           const loaded: EditJson = editRes.data.edit_json
-          // Ensure captions object has style and preset defaults if legacy
           if (!loaded.captions.style || typeof loaded.captions.style === 'string') {
             loaded.captions.style = STYLE_PRESETS['Firestorm Gold']
           }
@@ -341,6 +429,9 @@ export default function Editor() {
           }
           if (loaded.captions.safe_zones === undefined) {
             loaded.captions.safe_zones = true
+          }
+          if (!loaded.audio) {
+            loaded.audio = DEFAULT_EDIT_JSON.audio
           }
 
           setEditJson(loaded)
@@ -385,7 +476,7 @@ export default function Editor() {
         localStorage.setItem(`clipforge_edit_${clipId}`, JSON.stringify(editJson))
         setHasUnsaved(false)
         if (showNotification) {
-          success('Changes Saved', 'Clip edit settings saved successfully.')
+          success('Changes Saved', 'Saved to database successfully.')
         }
       } catch (err: any) {
         localStorage.setItem(`clipforge_edit_${clipId}`, JSON.stringify(editJson))
@@ -411,8 +502,31 @@ export default function Editor() {
   }, [editJson, hasUnsaved, saveChanges])
 
   // -------------------------------------------------------------------------
-  // 4. Video Time Update & Looping
+  // 4. Video Time Update & Synchronized Music Audio
   // -------------------------------------------------------------------------
+  const selectedMusicAsset = useMemo(() => {
+    return userAssets.find((a) => a.id === editJson.audio?.music?.asset_id)
+  }, [userAssets, editJson.audio?.music?.asset_id])
+
+  const selectedWatermarkAsset = useMemo(() => {
+    return userAssets.find((a) => a.id === editJson.watermark?.asset_id)
+  }, [userAssets, editJson.watermark?.asset_id])
+
+  // Sync background music volume
+  useEffect(() => {
+    if (musicAudioRef.current && editJson.audio?.music) {
+      const vol = (editJson.audio.music.volume / 100) * (editJson.audio.music.duck_under_speech ? 0.4 : 1.0)
+      musicAudioRef.current.volume = Math.max(0, Math.min(1, vol))
+    }
+  }, [editJson.audio?.music])
+
+  // Sync video volume
+  useEffect(() => {
+    if (videoRef.current && editJson.audio?.original_volume !== undefined) {
+      videoRef.current.volume = Math.max(0, Math.min(1, editJson.audio.original_volume / 100))
+    }
+  }, [editJson.audio?.original_volume])
+
   const handleTimeUpdate = () => {
     if (!videoRef.current) return
     const t = videoRef.current.currentTime
@@ -422,9 +536,22 @@ export default function Editor() {
       bgVideoRef.current.currentTime = t
     }
 
-    if (loopTrim && t >= editJson.trim.out) {
+    // Music sync
+    if (musicAudioRef.current && selectedMusicAsset) {
+      const relTime = Math.max(0, t - editJson.trim.in)
+      if (Math.abs(musicAudioRef.current.currentTime - relTime) > 0.3) {
+        musicAudioRef.current.currentTime = relTime % (musicAudioRef.current.duration || 60)
+      }
+    }
+
+    // Loop check
+    const outroDuration = editJson.outro?.enabled ? editJson.outro.duration_s : 0
+    const totalOut = editJson.trim.out + outroDuration
+
+    if (loopTrim && t >= totalOut) {
       videoRef.current.currentTime = editJson.trim.in
       if (bgVideoRef.current) bgVideoRef.current.currentTime = editJson.trim.in
+      if (musicAudioRef.current) musicAudioRef.current.currentTime = 0
       videoRef.current.play().catch(() => {})
     }
   }
@@ -437,10 +564,14 @@ export default function Editor() {
       }
       videoRef.current.play().catch(() => {})
       bgVideoRef.current?.play().catch(() => {})
+      if (musicAudioRef.current && selectedMusicAsset) {
+        musicAudioRef.current.play().catch(() => {})
+      }
       setIsPlaying(true)
     } else {
       videoRef.current.pause()
       bgVideoRef.current?.pause()
+      musicAudioRef.current?.pause()
       setIsPlaying(false)
     }
   }
@@ -450,6 +581,10 @@ export default function Editor() {
     const clamped = Math.max(0, Math.min(duration, sec))
     videoRef.current.currentTime = clamped
     setCurrentTime(clamped)
+    if (musicAudioRef.current && selectedMusicAsset) {
+      const rel = Math.max(0, clamped - editJson.trim.in)
+      musicAudioRef.current.currentTime = rel % (musicAudioRef.current.duration || 60)
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -640,12 +775,11 @@ export default function Editor() {
   }, [dragStart, editJson.framing.crop.w, isDraggingCrop, updateEdit])
 
   // -------------------------------------------------------------------------
-  // 7. Phase 6B: Live Caption Karaoke & Safe Zones
+  // 7. Caption Logic
   // -------------------------------------------------------------------------
   const wordsPerLine = Math.max(1, Math.min(4, editJson.captions?.style?.words_per_line || 3))
   const wordsList = editJson.captions?.words || []
 
-  // Group words into lines of wordsPerLine
   const captionLines = useMemo(() => {
     const lines: Array<{ index: number; words: CaptionWord[]; start: number; end: number }> = []
     for (let i = 0; i < wordsList.length; i += wordsPerLine) {
@@ -662,12 +796,10 @@ export default function Editor() {
     return lines
   }, [wordsList, wordsPerLine])
 
-  // Active line for current time
   const activeLine = useMemo(() => {
     return captionLines.find((l) => currentTime >= l.start && currentTime <= l.end + 0.3)
   }, [captionLines, currentTime])
 
-  // Apply style preset
   const handleApplyPreset = (presetName: string) => {
     const preset = STYLE_PRESETS[presetName]
     if (!preset) return
@@ -685,7 +817,6 @@ export default function Editor() {
     success('Preset Applied', `Style updated to "${presetName}".`)
   }
 
-  // Update specific style field
   const updateStyle = (key: keyof CaptionStyle, value: any) => {
     updateEdit((prev) => ({
       ...prev,
@@ -700,142 +831,138 @@ export default function Editor() {
   }
 
   // -------------------------------------------------------------------------
-  // 8. Transcript Editor Actions (Edit, Split, Merge, Delete, Import)
+  // 8. Asset Upload Handlers
   // -------------------------------------------------------------------------
-  const filteredLines = useMemo(() => {
-    if (!searchFilter.trim()) return captionLines
-    const q = searchFilter.toLowerCase()
-    return captionLines.filter((line) => line.words.some((w) => w.text.toLowerCase().includes(q)))
-  }, [captionLines, searchFilter])
-
-  const handleSaveWordEdit = (wordGlobalIdx: number) => {
-    if (!editingWordText.trim()) return
-    updateEdit((prev) => {
-      const newWords = [...prev.captions.words]
-      if (newWords[wordGlobalIdx]) {
-        newWords[wordGlobalIdx] = {
-          ...newWords[wordGlobalIdx],
-          text: editingWordText.trim(),
-        }
-      }
-      return {
-        ...prev,
-        captions: { ...prev.captions, words: newWords },
-      }
-    })
-    setEditingWordIdx(null)
-    setEditingWordText('')
-  }
-
-  const handleDeleteWord = (wordGlobalIdx: number) => {
-    updateEdit((prev) => {
-      const newWords = prev.captions.words.filter((_, idx) => idx !== wordGlobalIdx)
-      return {
-        ...prev,
-        captions: { ...prev.captions, words: newWords },
-      }
-    })
-  }
-
-  const handleSplitLine = (lineIdx: number) => {
-    // Splits line by decreasing words_per_line or re-chunking
-    const targetWord = wordsList[lineIdx * wordsPerLine + 1]
-    if (!targetWord) return
-    updateStyle('words_per_line', Math.max(1, wordsPerLine - 1))
-    success('Adjusted Flow', 'Words per line reduced to split phrasing.')
-  }
-
-  const handleMergeLine = (lineIdx: number) => {
-    updateStyle('words_per_line', Math.min(4, wordsPerLine + 1))
-    success('Adjusted Flow', 'Words per line increased to merge lines.')
-  }
-
-  // Subtitle File Import (.srt / .vtt / .ass)
-  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadAssetFile = async (e: React.ChangeEvent<HTMLInputElement>, target: 'logo' | 'audio') => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onload = (evt) => {
-      try {
-        const text = String(evt.target?.result || '')
-        const parsedWords = parseSubtitleTextToWords(text)
-        if (parsedWords.length === 0) {
-          toastError('Import Failed', 'No valid subtitle cues or timestamps found.')
-          return
-        }
+    setIsUploadingAsset(true)
+    const formData = new FormData()
+    formData.append('file', file)
 
-        if (window.confirm(`Replace existing captions with ${parsedWords.length} words from "${file.name}"?`)) {
-          updateEdit((prev) => ({
-            ...prev,
-            captions: {
-              ...prev.captions,
-              words: parsedWords,
+    try {
+      const res = await api.post('/assets', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const uploaded: AssetRecord = res.data
+      await fetchUserAssets()
+
+      if (target === 'logo') {
+        updateEdit((prev) => ({
+          ...prev,
+          watermark: {
+            asset_id: uploaded.id,
+            position: prev.watermark?.position || 'tr',
+            size_pct: prev.watermark?.size_pct || 15,
+            opacity: prev.watermark?.opacity || 85,
+            margin_pct: prev.watermark?.margin_pct || 5,
+          },
+        }))
+        success('Watermark Attached', `Attached "${uploaded.name}".`)
+      } else {
+        updateEdit((prev) => ({
+          ...prev,
+          audio: {
+            ...prev.audio,
+            music: {
+              ...prev.audio.music,
+              asset_id: uploaded.id,
             },
-          }))
-          success('Captions Imported', `Loaded ${parsedWords.length} words from ${file.name}.`)
-        }
-      } catch (err: any) {
-        toastError('Import Error', err?.message || 'Could not parse subtitle file.')
-      } finally {
-        if (fileInputRef.current) fileInputRef.current.value = ''
+          },
+        }))
+        success('Music Track Attached', `Attached "${uploaded.name}".`)
       }
+    } catch (err: any) {
+      toastError('Upload Failed', err?.response?.data?.detail || err?.message || 'Could not upload file.')
+    } finally {
+      setIsUploadingAsset(false)
+      if (logoUploadRef.current) logoUploadRef.current.value = ''
+      if (audioUploadRef.current) audioUploadRef.current.value = ''
     }
-    reader.readAsText(file)
   }
 
   // -------------------------------------------------------------------------
-  // Safe Zone Calculation for Captions
+  // 9. Watermark Overlay Coordinates
   // -------------------------------------------------------------------------
-  const captionStyle = editJson.captions?.style || STYLE_PRESETS['Firestorm Gold']
-  const safeZonesActive = editJson.captions?.safe_zones
+  const getWatermarkPositionStyle = (): React.CSSProperties => {
+    const wm = editJson.watermark
+    if (!wm || !wm.asset_id) return { display: 'none' }
 
-  // Calculate top/bottom position clamped away from UI safe zones
-  // On 9:16 Shorts: bottom 20% is deadzone (title/sound), right 15% is deadzone (like/comment buttons), top 8% is header
-  const getCaptionContainerStyle = (): React.CSSProperties => {
-    let basePosStyle: React.CSSProperties = {}
-    const yOff = captionStyle.y_offset || 0
+    const margin = wm.margin_pct
+    const pos = wm.position
+    const safe = editJson.captions.safe_zones
 
-    if (captionStyle.position === 'top') {
-      const topOffset = safeZonesActive ? Math.max(50, 60 + yOff) : Math.max(20, 20 + yOff)
-      basePosStyle = { top: `${topOffset}px` }
-    } else if (captionStyle.position === 'middle') {
-      basePosStyle = {
-        top: '50%',
-        transform: `translateY(calc(-50% + ${yOff}px))`,
-      }
-    } else {
-      // lower_third
-      // If safe zones active: clamp away from bottom 20% (~100px on 533px preview height)
-      const bottomOffset = safeZonesActive ? Math.max(105, 105 - yOff) : Math.max(30, 30 - yOff)
-      basePosStyle = { bottom: `${bottomOffset}px` }
-    }
-
-    return {
+    const style: React.CSSProperties = {
       position: 'absolute',
-      left: safeZonesActive ? '20px' : '10px',
-      right: safeZonesActive ? '65px' : '10px', // Right margin keeps clear of button column
-      ...basePosStyle,
-      zIndex: 25,
+      width: `${wm.size_pct}%`,
+      opacity: wm.opacity / 100,
+      zIndex: 26,
       pointerEvents: 'none',
-      display: 'flex',
-      justifyContent: 'center',
+      transition: 'all 0.15s ease',
     }
+
+    if (pos === 'tl') {
+      style.top = `${margin}%`
+      style.left = `${margin}%`
+    } else if (pos === 'tr') {
+      style.top = `${margin}%`
+      style.right = `${safe ? Math.max(margin, 15) : margin}%`
+    } else if (pos === 'bl') {
+      style.bottom = `${safe ? Math.max(margin, 20) : margin}%`
+      style.left = `${margin}%`
+    } else if (pos === 'br') {
+      style.bottom = `${safe ? Math.max(margin, 20) : margin}%`
+      style.right = `${safe ? Math.max(margin, 15) : margin}%`
+    }
+
+    return style
   }
 
-  const trimmedDuration = Math.max(0, editJson.trim.out - editJson.trim.in)
-  const isOver60s = trimmedDuration > 60
+  // -------------------------------------------------------------------------
+  // 10. Outro Check
+  // -------------------------------------------------------------------------
+  const isShowingOutro = useMemo(() => {
+    if (!editJson.outro?.enabled) return false
+    return currentTime >= editJson.trim.out
+  }, [currentTime, editJson.outro, editJson.trim.out])
+
+  const totalDuration = useMemo(() => {
+    const trimDur = editJson.trim.out - editJson.trim.in
+    const outroDur = editJson.outro?.enabled ? editJson.outro.duration_s : 0
+    return round2(trimDur + outroDur)
+  }, [editJson.outro, editJson.trim.in, editJson.trim.out])
+
+  const isOver60s = totalDuration > 60
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] -m-6 bg-slate-950 text-slate-100 overflow-hidden select-none">
-      {/* Hidden File Input for .srt / .vtt / .ass */}
+      {/* Hidden Inputs for File Uploads */}
+      <input ref={fileInputRef} type="file" accept=".srt,.vtt,.ass" className="hidden" />
       <input
-        ref={fileInputRef}
+        ref={logoUploadRef}
         type="file"
-        accept=".srt,.vtt,.ass"
-        onChange={handleImportFile}
+        accept="image/png,image/jpeg,image/webp"
+        onChange={(e) => handleUploadAssetFile(e, 'logo')}
         className="hidden"
       />
+      <input
+        ref={audioUploadRef}
+        type="file"
+        accept="audio/mpeg,audio/wav,audio/mp4,audio/x-m4a"
+        onChange={(e) => handleUploadAssetFile(e, 'audio')}
+        className="hidden"
+      />
+
+      {/* Hidden Synchronized Music Audio Track */}
+      {selectedMusicAsset && (
+        <audio
+          ref={musicAudioRef}
+          src={selectedMusicAsset.file_url}
+          preload="auto"
+          className="hidden"
+        />
+      )}
 
       {/* ===================================================================== */}
       {/* TOP BAR: Undo, Redo, Save, Export, Aspect switcher                    */}
@@ -878,7 +1005,6 @@ export default function Editor() {
             </button>
           </div>
 
-          {/* Aspect Ratio Pills */}
           <div className="flex items-center bg-slate-900 border border-surface-border rounded-lg p-0.5 text-xs">
             {(['9:16', '1:1', '4:5'] as AspectRatio[]).map((aspect) => (
               <button
@@ -917,7 +1043,7 @@ export default function Editor() {
 
           <Button
             size="sm"
-            onClick={() => success('Export Queued', 'Full HD 1080x1920 render started with captions & framing.')}
+            onClick={() => success('Export Queued', 'Full HD 1080x1920 render queued with all audio, watermark and outro layers.')}
             className="gap-1.5 bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs"
           >
             <Download size={14} /> Export
@@ -931,7 +1057,6 @@ export default function Editor() {
       <div className="flex-1 flex overflow-hidden">
         {/* CENTER: Live Aspect Preview */}
         <main className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-950 relative overflow-hidden">
-          {/* Safe Zone Toggle Button in Corner */}
           <div className="absolute top-4 left-6 z-30">
             <button
               onClick={() => setShowSafeZoneOverlay((v) => !v)}
@@ -957,7 +1082,7 @@ export default function Editor() {
             }`}
           >
             {/* Background Layer: Blur / Solid / Image */}
-            {editJson.framing.mode === 'blur_fit' && (
+            {editJson.framing.mode === 'blur_fit' && !isShowingOutro && (
               <div className="absolute inset-0 z-0 overflow-hidden">
                 {editJson.background.type === 'blur' && (
                   <video
@@ -984,9 +1109,31 @@ export default function Editor() {
             )}
 
             {/* Video Foreground Container */}
-            <div className="absolute inset-0 z-10 overflow-hidden flex items-center justify-center">
-              {editJson.framing.mode === 'crop' && (
-                <div className="relative w-full h-full overflow-hidden">
+            {!isShowingOutro && (
+              <div className="absolute inset-0 z-10 overflow-hidden flex items-center justify-center">
+                {editJson.framing.mode === 'crop' && (
+                  <div className="relative w-full h-full overflow-hidden">
+                    <video
+                      ref={videoRef}
+                      src={videoUrl}
+                      onTimeUpdate={handleTimeUpdate}
+                      onLoadedMetadata={() => {
+                        if (videoRef.current) setDuration(videoRef.current.duration)
+                      }}
+                      playsInline
+                      className="absolute max-w-none pointer-events-none"
+                      style={{
+                        width: `${(100 / editJson.framing.crop.w) * 100}%`,
+                        height: '100%',
+                        left: `-${(editJson.framing.crop.x / editJson.framing.crop.w) * 100}%`,
+                        top: '0%',
+                        objectFit: 'cover',
+                      }}
+                    />
+                  </div>
+                )}
+
+                {editJson.framing.mode === 'blur_fit' && (
                   <video
                     ref={videoRef}
                     src={videoUrl}
@@ -995,65 +1142,107 @@ export default function Editor() {
                       if (videoRef.current) setDuration(videoRef.current.duration)
                     }}
                     playsInline
-                    className="absolute max-w-none pointer-events-none"
-                    style={{
-                      width: `${(100 / editJson.framing.crop.w) * 100}%`,
-                      height: '100%',
-                      left: `-${(editJson.framing.crop.x / editJson.framing.crop.w) * 100}%`,
-                      top: '0%',
-                      objectFit: 'cover',
-                    }}
+                    className="w-full object-contain pointer-events-none z-10"
                   />
-                </div>
-              )}
+                )}
 
-              {editJson.framing.mode === 'blur_fit' && (
-                <video
-                  ref={videoRef}
-                  src={videoUrl}
-                  onTimeUpdate={handleTimeUpdate}
-                  onLoadedMetadata={() => {
-                    if (videoRef.current) setDuration(videoRef.current.duration)
-                  }}
-                  playsInline
-                  className="w-full object-contain pointer-events-none z-10"
-                />
-              )}
+                {editJson.framing.mode === 'split' && (
+                  <div className="w-full h-full flex flex-col">
+                    <div className="relative w-full h-1/2 overflow-hidden border-b border-brand-500/30">
+                      <video
+                        ref={videoRef}
+                        src={videoUrl}
+                        onTimeUpdate={handleTimeUpdate}
+                        playsInline
+                        className="absolute max-w-none pointer-events-none"
+                        style={{
+                          width: '100%',
+                          height: '200%',
+                          top: '0%',
+                          objectFit: 'cover',
+                        }}
+                      />
+                    </div>
+                    <div className="relative w-full h-1/2 overflow-hidden">
+                      <video
+                        src={videoUrl}
+                        playsInline
+                        muted
+                        className="absolute max-w-none pointer-events-none"
+                        style={{
+                          width: '100%',
+                          height: '200%',
+                          top: '-100%',
+                          objectFit: 'cover',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
-              {editJson.framing.mode === 'split' && (
-                <div className="w-full h-full flex flex-col">
-                  <div className="relative w-full h-1/2 overflow-hidden border-b border-brand-500/30">
-                    <video
-                      ref={videoRef}
-                      src={videoUrl}
-                      onTimeUpdate={handleTimeUpdate}
-                      playsInline
-                      className="absolute max-w-none pointer-events-none"
-                      style={{
-                        width: '100%',
-                        height: '200%',
-                        top: '0%',
-                        objectFit: 'cover',
-                      }}
-                    />
+            {/* LIVE WATERMARK OVERLAY */}
+            {selectedWatermarkAsset && !isShowingOutro && (
+              <img
+                src={selectedWatermarkAsset.file_url}
+                alt="Watermark Logo"
+                style={getWatermarkPositionStyle()}
+              />
+            )}
+
+            {/* OUTRO CARD BUMPER LIVE PREVIEW */}
+            {isShowingOutro && editJson.outro && (
+              <div
+                className="absolute inset-0 z-28 flex flex-col items-center justify-center p-6 text-center animate-in fade-in"
+                style={{ backgroundColor: editJson.outro.bg_color }}
+              >
+                {editJson.outro.template === 'subscribe' && (
+                  <div className="space-y-4">
+                    <div className="w-16 h-16 rounded-full bg-red-600/20 border-2 border-red-500 flex items-center justify-center text-red-500 mx-auto animate-bounce">
+                      <Bell size={32} />
+                    </div>
+                    <h3
+                      className="font-black text-lg tracking-tight"
+                      style={{ color: editJson.outro.text_color }}
+                    >
+                      {editJson.outro.text}
+                    </h3>
+                    <div className="px-4 py-2 rounded-full bg-red-600 text-white font-extrabold text-xs shadow-lg inline-block">
+                      SUBSCRIBE NOW
+                    </div>
                   </div>
-                  <div className="relative w-full h-1/2 overflow-hidden">
-                    <video
-                      src={videoUrl}
-                      playsInline
-                      muted
-                      className="absolute max-w-none pointer-events-none"
-                      style={{
-                        width: '100%',
-                        height: '200%',
-                        top: '-100%',
-                        objectFit: 'cover',
-                      }}
-                    />
+                )}
+
+                {editJson.outro.template === 'follow' && (
+                  <div className="space-y-4">
+                    <div className="w-16 h-16 rounded-full bg-brand-600/20 border-2 border-brand-500 flex items-center justify-center text-brand-400 mx-auto">
+                      <Share2 size={32} />
+                    </div>
+                    <h3
+                      className="font-black text-lg tracking-tight"
+                      style={{ color: editJson.outro.text_color }}
+                    >
+                      {editJson.outro.text}
+                    </h3>
+                    <div className="px-4 py-2 rounded-full bg-brand-600 text-white font-extrabold text-xs shadow-lg inline-block">
+                      FOLLOW FOR DAILY SHORTS
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+
+                {editJson.outro.template === 'custom_text' && (
+                  <div className="space-y-3">
+                    <h3
+                      className="font-black text-2xl tracking-tight leading-snug"
+                      style={{ color: editJson.outro.text_color }}
+                    >
+                      {editJson.outro.text}
+                    </h3>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Play Overlay Button */}
             {!isPlaying && (
@@ -1065,33 +1254,48 @@ export default function Editor() {
               </button>
             )}
 
-            {/* SAFE ZONE OVERLAY GUIDE (YouTube Shorts UI Outlines) */}
+            {/* SAFE ZONE OVERLAY GUIDE */}
             {showSafeZoneOverlay && editJson.aspect === '9:16' && (
               <div className="absolute inset-0 z-20 pointer-events-none border border-dashed border-amber-500/30">
-                {/* Right button column deadzone */}
                 <div className="absolute right-0 top-1/3 bottom-24 w-12 border-l border-dashed border-amber-500/40 bg-amber-500/5 flex items-center justify-center">
                   <span className="text-[9px] text-amber-400 font-mono -rotate-90">UI Buttons</span>
                 </div>
-                {/* Bottom title & channel deadzone */}
                 <div className="absolute inset-x-0 bottom-0 h-24 border-t border-dashed border-amber-500/40 bg-amber-500/5 flex items-center justify-center">
                   <span className="text-[10px] text-amber-400 font-mono">Title & Audio UI Deadzone (20%)</span>
                 </div>
               </div>
             )}
 
-            {/* LIVE CAPTION KARAOKE PREVIEW */}
-            {editJson.captions?.enabled && activeLine && (
-              <div style={getCaptionContainerStyle()}>
+            {/* LIVE CAPTIONS */}
+            {editJson.captions?.enabled && activeLine && !isShowingOutro && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: editJson.captions.safe_zones ? '20px' : '10px',
+                  right: editJson.captions.safe_zones ? '65px' : '10px',
+                  bottom:
+                    editJson.captions.style.position === 'top'
+                      ? undefined
+                      : editJson.captions.style.position === 'middle'
+                      ? '50%'
+                      : `${Math.max(105, 105 - (editJson.captions.style.y_offset || 0))}px`,
+                  top: editJson.captions.style.position === 'top' ? '50px' : undefined,
+                  zIndex: 25,
+                  pointerEvents: 'none',
+                  display: 'flex',
+                  justifyContent: 'center',
+                }}
+              >
                 <div
                   style={{
-                    fontFamily: `'${captionStyle.font || 'Noto Sans'}', 'Noto Sans Devanagari', sans-serif`,
-                    fontSize: `${Math.round(captionStyle.size * 0.42)}px`,
+                    fontFamily: `'${editJson.captions.style.font || 'Noto Sans'}', 'Noto Sans Devanagari', sans-serif`,
+                    fontSize: `${Math.round(editJson.captions.style.size * 0.42)}px`,
                     lineHeight: '1.25',
                     textAlign: 'center',
-                    backgroundColor: captionStyle.box ? captionStyle.box_color : 'transparent',
-                    padding: captionStyle.box ? '4px 10px' : '0px',
-                    borderRadius: captionStyle.box ? '8px' : '0px',
-                    textShadow: `${captionStyle.outline_width}px ${captionStyle.outline_width}px 0 ${captionStyle.outline_color}, -${captionStyle.outline_width}px -${captionStyle.outline_width}px 0 ${captionStyle.outline_color}, -${captionStyle.outline_width}px ${captionStyle.outline_width}px 0 ${captionStyle.outline_color}, ${captionStyle.outline_width}px -${captionStyle.outline_width}px 0 ${captionStyle.outline_color}`,
+                    backgroundColor: editJson.captions.style.box ? editJson.captions.style.box_color : 'transparent',
+                    padding: editJson.captions.style.box ? '4px 10px' : '0px',
+                    borderRadius: editJson.captions.style.box ? '8px' : '0px',
+                    textShadow: `${editJson.captions.style.outline_width}px ${editJson.captions.style.outline_width}px 0 ${editJson.captions.style.outline_color}`,
                     display: 'inline-flex',
                     flexWrap: 'wrap',
                     justifyContent: 'center',
@@ -1106,9 +1310,10 @@ export default function Editor() {
                       <span
                         key={wIdx}
                         style={{
-                          color: isWordActive ? captionStyle.highlight_color : captionStyle.color,
+                          color: isWordActive
+                            ? editJson.captions.style.highlight_color
+                            : editJson.captions.style.color,
                           transform: isWordActive ? 'scale(1.08)' : 'scale(1)',
-                          transition: 'transform 0.08s ease, color 0.08s ease',
                           display: 'inline-block',
                         }}
                       >
@@ -1122,39 +1327,48 @@ export default function Editor() {
           </div>
         </main>
 
-        {/* RIGHT PANEL: 3 Tabs */}
+        {/* RIGHT PANEL: 4 Tabs */}
         <aside className="w-84 border-l border-surface-border bg-surface/50 backdrop-blur flex flex-col shrink-0">
-          {/* Tab Navigation */}
           <div className="flex border-b border-surface-border">
             <button
               onClick={() => setActiveTab('framing')}
-              className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition ${
+              className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1 border-b-2 transition ${
                 activeTab === 'framing'
                   ? 'border-brand-500 text-brand-400 bg-brand-500/10'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Crop size={14} /> Framing
+              <Crop size={13} /> Framing
             </button>
             <button
               onClick={() => setActiveTab('text')}
-              className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition ${
+              className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1 border-b-2 transition ${
                 activeTab === 'text'
                   ? 'border-brand-500 text-brand-400 bg-brand-500/10'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Type size={14} /> Subtitles
+              <Type size={13} /> Captions
             </button>
             <button
               onClick={() => setActiveTab('audio')}
-              className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition ${
+              className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1 border-b-2 transition ${
                 activeTab === 'audio'
                   ? 'border-brand-500 text-brand-400 bg-brand-500/10'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Music size={14} /> Audio
+              <Music size={13} /> Audio
+            </button>
+            <button
+              onClick={() => setActiveTab('media')}
+              className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1 border-b-2 transition ${
+                activeTab === 'media'
+                  ? 'border-brand-500 text-brand-400 bg-brand-500/10'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sliders size={13} /> Media
             </button>
           </div>
 
@@ -1246,86 +1460,16 @@ export default function Editor() {
                       <div className="absolute right-0 inset-y-0 w-1 bg-brand-400" />
                     </div>
                   </div>
-
-                  <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1">
-                    <span>X: {editJson.framing.crop.x}%</span>
-                    <span>Width: {editJson.framing.crop.w}%</span>
-                    <span>Ratio: {editJson.aspect}</span>
-                  </div>
                 </div>
               )}
-
-              <div>
-                <label className="font-bold text-slate-300 block mb-2 uppercase tracking-wider text-[10px]">
-                  Background Fill
-                </label>
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  {(['blur', 'solid', 'image'] as BackgroundType[]).map((bgType) => (
-                    <button
-                      key={bgType}
-                      onClick={() =>
-                        updateEdit((prev) => ({
-                          ...prev,
-                          background: { ...prev.background, type: bgType },
-                        }))
-                      }
-                      className={`py-2 px-2 rounded-lg border text-center capitalize transition ${
-                        editJson.background.type === bgType
-                          ? 'border-brand-500 bg-brand-500/10 text-white font-bold'
-                          : 'border-surface-border text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {bgType}
-                    </button>
-                  ))}
-                </div>
-
-                {editJson.background.type === 'solid' && (
-                  <div className="flex items-center gap-3 p-2 rounded-lg bg-slate-900 border border-surface-border">
-                    <input
-                      type="color"
-                      value={editJson.background.value || '#000000'}
-                      onChange={(e) =>
-                        updateEdit((prev) => ({
-                          ...prev,
-                          background: { ...prev.background, value: e.target.value },
-                        }))
-                      }
-                      className="w-7 h-7 rounded border-none cursor-pointer bg-transparent"
-                    />
-                    <span className="font-mono text-slate-300">
-                      {editJson.background.value || '#000000'}
-                    </span>
-                  </div>
-                )}
-
-                {editJson.background.type === 'image' && (
-                  <input
-                    type="text"
-                    placeholder="Image URL..."
-                    value={editJson.background.value || ''}
-                    onChange={(e) =>
-                      updateEdit((prev) => ({
-                        ...prev,
-                        background: { ...prev.background, value: e.target.value },
-                      }))
-                    }
-                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-surface-border text-white text-xs focus:outline-none focus:border-brand-500"
-                  />
-                )}
-              </div>
             </div>
           )}
 
-          {/* TAB 2: Text & Subtitles (Phase 6B Complete) */}
+          {/* TAB 2: Text & Subtitles */}
           {activeTab === 'text' && (
-            <div className="p-4 space-y-5 overflow-y-auto flex-1 text-xs">
-              {/* Enable / Disable Captions */}
+            <div className="p-4 space-y-4 overflow-y-auto flex-1 text-xs">
               <div className="flex items-center justify-between pb-3 border-b border-surface-border">
-                <div>
-                  <span className="font-bold text-slate-200 block text-xs">Burn In Captions</span>
-                  <span className="text-[11px] text-slate-400">Karaoke-style word highlight</span>
-                </div>
+                <span className="font-bold text-slate-200">Burn In Captions</span>
                 <input
                   type="checkbox"
                   checked={editJson.captions.enabled}
@@ -1339,290 +1483,429 @@ export default function Editor() {
                 />
               </div>
 
-              {/* 6 Original Style Presets */}
               <div>
                 <label className="font-bold text-slate-300 block mb-2 uppercase tracking-wider text-[10px]">
-                  Style Presets
+                  Presets
                 </label>
                 <div className="grid grid-cols-2 gap-2">
-                  {Object.keys(STYLE_PRESETS).map((pName) => {
-                    const isSelected = editJson.captions.preset === pName
-                    return (
-                      <button
-                        key={pName}
-                        onClick={() => handleApplyPreset(pName)}
-                        className={`p-2 rounded-xl border text-left transition ${
-                          isSelected
-                            ? 'border-brand-500 bg-brand-500/15 text-white shadow'
-                            : 'border-surface-border bg-slate-900/60 text-slate-300 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="font-bold text-xs truncate">{pName}</div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 truncate">
-                          {pName === 'Devanagari Express' ? 'Hindi / English' : `${STYLE_PRESETS[pName].words_per_line} words/line`}
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Fine-Tuning Controls */}
-              <div className="space-y-3 pt-2 border-t border-surface-border">
-                <label className="font-bold text-slate-300 block uppercase tracking-wider text-[10px]">
-                  Custom Formatting
-                </label>
-
-                {/* Words Per Line */}
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Words per line:</span>
-                  <div className="flex items-center gap-1 bg-slate-900 rounded-lg p-0.5 border border-surface-border">
-                    {[1, 2, 3, 4].map((n) => (
-                      <button
-                        key={n}
-                        onClick={() => updateStyle('words_per_line', n)}
-                        className={`px-2 py-0.5 rounded text-xs transition ${
-                          wordsPerLine === n
-                            ? 'bg-brand-600 text-white font-bold'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Font Size */}
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Font Size ({captionStyle.size}px):</span>
-                  <input
-                    type="range"
-                    min="24"
-                    max="64"
-                    value={captionStyle.size}
-                    onChange={(e) => updateStyle('size', parseInt(e.target.value))}
-                    className="w-28 accent-brand-500 cursor-pointer"
-                  />
-                </div>
-
-                {/* Colors (Primary, Highlight, Outline) */}
-                <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
-                  <div className="p-2 rounded-lg bg-slate-900 border border-surface-border">
-                    <span className="text-slate-400 block mb-1">Text Color</span>
-                    <input
-                      type="color"
-                      value={captionStyle.color}
-                      onChange={(e) => updateStyle('color', e.target.value)}
-                      className="w-6 h-6 mx-auto cursor-pointer block bg-transparent"
-                    />
-                  </div>
-                  <div className="p-2 rounded-lg bg-slate-900 border border-surface-border">
-                    <span className="text-slate-400 block mb-1">Highlight</span>
-                    <input
-                      type="color"
-                      value={captionStyle.highlight_color}
-                      onChange={(e) => updateStyle('highlight_color', e.target.value)}
-                      className="w-6 h-6 mx-auto cursor-pointer block bg-transparent"
-                    />
-                  </div>
-                  <div className="p-2 rounded-lg bg-slate-900 border border-surface-border">
-                    <span className="text-slate-400 block mb-1">Outline</span>
-                    <input
-                      type="color"
-                      value={captionStyle.outline_color}
-                      onChange={(e) => updateStyle('outline_color', e.target.value)}
-                      className="w-6 h-6 mx-auto cursor-pointer block bg-transparent"
-                    />
-                  </div>
-                </div>
-
-                {/* Position & Safe Zones Toggle */}
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-slate-400">Position:</span>
-                  <select
-                    value={captionStyle.position}
-                    onChange={(e) => updateStyle('position', e.target.value as CaptionPosition)}
-                    className="bg-slate-900 border border-surface-border text-white text-xs rounded px-2 py-1"
-                  >
-                    <option value="lower_third">Lower Third (Recommended)</option>
-                    <option value="middle">Middle</option>
-                    <option value="top">Top</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Safe Zones Clamping:</span>
-                  <input
-                    type="checkbox"
-                    checked={editJson.captions.safe_zones}
-                    onChange={(e) =>
-                      updateEdit((prev) => ({
-                        ...prev,
-                        captions: { ...prev.captions, safe_zones: e.target.checked },
-                      }))
-                    }
-                    className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500 cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {/* TRANSCRIPT EDITOR PANEL */}
-              <div className="pt-3 border-t border-surface-border space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-slate-300 uppercase tracking-wider text-[10px]">
-                    Transcript Editor ({wordsList.length} words)
-                  </label>
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="gap-1 text-[10px]"
-                    title="Import .srt, .vtt, or .ass file"
-                  >
-                    <Upload size={11} /> Import Subtitles
-                  </Button>
-                </div>
-
-                {/* Search Box */}
-                <div className="relative">
-                  <Search size={13} className="absolute left-2.5 top-2.5 text-slate-500" />
-                  <input
-                    type="text"
-                    placeholder="Search caption phrases..."
-                    value={searchFilter}
-                    onChange={(e) => setSearchFilter(e.target.value)}
-                    className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-slate-900 border border-surface-border text-white text-xs focus:outline-none focus:border-brand-500"
-                  />
-                  {searchFilter && (
+                  {Object.keys(STYLE_PRESETS).map((pName) => (
                     <button
-                      onClick={() => setSearchFilter('')}
-                      className="absolute right-2.5 top-2 text-slate-400 hover:text-white"
+                      key={pName}
+                      onClick={() => handleApplyPreset(pName)}
+                      className={`p-2 rounded-xl border text-left transition ${
+                        editJson.captions.preset === pName
+                          ? 'border-brand-500 bg-brand-500/15 text-white font-bold'
+                          : 'border-surface-border bg-slate-900/60 text-slate-300'
+                      }`}
                     >
-                      <X size={14} />
+                      {pName}
                     </button>
-                  )}
-                </div>
-
-                {/* Lines List */}
-                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-                  {filteredLines.length === 0 ? (
-                    <p className="text-[11px] text-slate-500 text-center py-4">No matching captions found.</p>
-                  ) : (
-                    filteredLines.map((line) => {
-                      const isCurrentLine = currentTime >= line.start && currentTime <= line.end
-                      return (
-                        <div
-                          key={line.index}
-                          className={`p-2 rounded-lg border transition ${
-                            isCurrentLine
-                              ? 'border-brand-500/60 bg-brand-500/10'
-                              : 'border-surface-border bg-slate-900/50 hover:border-slate-700'
-                          }`}
-                        >
-                          {/* Timestamp & Line Seek */}
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1.5">
-                            <button
-                              onClick={() => seekTo(line.start)}
-                              className="font-mono text-brand-400 hover:underline flex items-center gap-1"
-                            >
-                              <Play size={10} fill="currentColor" /> {formatTime(line.start)} - {formatTime(line.end)}
-                            </button>
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => handleSplitLine(line.index)}
-                                title="Split line"
-                                className="p-0.5 hover:text-white text-slate-500"
-                              >
-                                <Scissors size={11} />
-                              </button>
-                              <button
-                                onClick={() => handleMergeLine(line.index)}
-                                title="Merge with next"
-                                className="p-0.5 hover:text-white text-slate-500"
-                              >
-                                <Plus size={11} />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Words in line */}
-                          <div className="flex flex-wrap gap-1">
-                            {line.words.map((w) => {
-                              const globalIdx = wordsList.indexOf(w)
-                              const isEditing = editingWordIdx === globalIdx
-                              return (
-                                <div
-                                  key={globalIdx}
-                                  className="group relative inline-flex items-center rounded bg-slate-800 px-1.5 py-0.5 border border-slate-700/80"
-                                >
-                                  {isEditing ? (
-                                    <input
-                                      type="text"
-                                      autoFocus
-                                      value={editingWordText}
-                                      onChange={(e) => setEditingWordText(e.target.value)}
-                                      onBlur={() => handleSaveWordEdit(globalIdx)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleSaveWordEdit(globalIdx)
-                                        if (e.key === 'Escape') setEditingWordIdx(null)
-                                      }}
-                                      className="bg-brand-900/60 text-white outline-none text-xs rounded px-1 max-w-[80px]"
-                                    />
-                                  ) : (
-                                    <span
-                                      onClick={() => {
-                                        setEditingWordIdx(globalIdx)
-                                        setEditingWordText(w.text)
-                                      }}
-                                      title="Click to edit word"
-                                      className="cursor-pointer text-slate-200 hover:text-brand-300"
-                                    >
-                                      {w.text}
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => handleDeleteWord(globalIdx)}
-                                    title="Delete word"
-                                    className="opacity-0 group-hover:opacity-100 ml-1 text-red-400 hover:text-red-300 transition"
-                                  >
-                                    <Trash2 size={10} />
-                                  </button>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
+                  ))}
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: Audio & Outro */}
+          {/* TAB 3: Audio Panel (Phase 6C) */}
           {activeTab === 'audio' && (
-            <div className="p-5 space-y-4 text-xs text-slate-400">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-200">Audio & Outro Bumper</span>
-                <Badge variant="muted" className="text-[10px]">
-                  Phase 6B Shell
-                </Badge>
+            <div className="p-5 space-y-5 overflow-y-auto flex-1 text-xs">
+              {/* Copyright Notice */}
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-start gap-2.5">
+                <ShieldAlert size={16} className="shrink-0 mt-0.5 text-amber-400" />
+                <p className="text-[11px] leading-relaxed">
+                  Use only music you have rights to. Copyrighted music can get your YouTube video claimed or muted.
+                </p>
               </div>
 
-              <div className="p-4 rounded-xl border border-surface-border bg-slate-900/50 space-y-3">
-                <span className="text-slate-300 font-semibold block">Volume & Enhancements</span>
+              {/* Original Video Volume */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 text-xs">
+                    Original Speech Volume: {editJson.audio.original_volume}%
+                  </span>
+                  {editJson.audio.original_volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                </div>
                 <input
                   type="range"
                   min="0"
                   max="200"
-                  defaultValue="100"
+                  value={editJson.audio.original_volume}
+                  onChange={(e) =>
+                    updateEdit((prev) => ({
+                      ...prev,
+                      audio: { ...prev.audio, original_volume: parseInt(e.target.value) },
+                    }))
+                  }
                   className="w-full accent-brand-500 cursor-pointer"
                 />
-                <p className="text-[11px] text-slate-500">
-                  Background music ducking and custom channel outro bumper options will be unlocked in Phase 6C.
-                </p>
+              </div>
+
+              {/* Background Music Track Picker */}
+              <div className="space-y-3 pt-3 border-t border-surface-border">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-300 text-xs">Background Music</span>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => audioUploadRef.current?.click()}
+                    disabled={isUploadingAsset}
+                    className="gap-1 text-[10px]"
+                  >
+                    {isUploadingAsset ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
+                    Upload Audio
+                  </Button>
+                </div>
+
+                <select
+                  value={editJson.audio.music.asset_id || ''}
+                  onChange={(e) =>
+                    updateEdit((prev) => ({
+                      ...prev,
+                      audio: {
+                        ...prev.audio,
+                        music: { ...prev.audio.music, asset_id: e.target.value || null },
+                      },
+                    }))
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-surface-border text-white text-xs"
+                >
+                  <option value="">No Background Music</option>
+                  {userAssets
+                    .filter((a) => a.asset_type === 'audio')
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                </select>
+
+                {/* Music Controls if Asset Attached */}
+                {editJson.audio.music.asset_id && (
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-surface-border space-y-3 mt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Music Volume: {editJson.audio.music.volume}%</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={editJson.audio.music.volume}
+                        onChange={(e) =>
+                          updateEdit((prev) => ({
+                            ...prev,
+                            audio: {
+                              ...prev.audio,
+                              music: { ...prev.audio.music, volume: parseInt(e.target.value) },
+                            },
+                          }))
+                        }
+                        className="w-28 accent-brand-500 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Fade In ({editJson.audio.music.fade_in_s}s):</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="5"
+                        step="0.5"
+                        value={editJson.audio.music.fade_in_s}
+                        onChange={(e) =>
+                          updateEdit((prev) => ({
+                            ...prev,
+                            audio: {
+                              ...prev.audio,
+                              music: { ...prev.audio.music, fade_in_s: parseFloat(e.target.value) },
+                            },
+                          }))
+                        }
+                        className="w-28 accent-brand-500 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Fade Out ({editJson.audio.music.fade_out_s}s):</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="5"
+                        step="0.5"
+                        value={editJson.audio.music.fade_out_s}
+                        onChange={(e) =>
+                          updateEdit((prev) => ({
+                            ...prev,
+                            audio: {
+                              ...prev.audio,
+                              music: { ...prev.audio.music, fade_out_s: parseFloat(e.target.value) },
+                            },
+                          }))
+                        }
+                        className="w-28 accent-brand-500 cursor-pointer"
+                      />
+                    </div>
+
+                    <label className="flex items-center justify-between pt-1 cursor-pointer">
+                      <span className="text-slate-300">Auto-Duck Under Speech</span>
+                      <input
+                        type="checkbox"
+                        checked={editJson.audio.music.duck_under_speech}
+                        onChange={(e) =>
+                          updateEdit((prev) => ({
+                            ...prev,
+                            audio: {
+                              ...prev.audio,
+                              music: { ...prev.audio.music, duck_under_speech: e.target.checked },
+                            },
+                          }))
+                        }
+                        className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: Media, Watermark & Outro (Phase 6C) */}
+          {activeTab === 'media' && (
+            <div className="p-5 space-y-6 overflow-y-auto flex-1 text-xs">
+              {/* WATERMARK PANEL */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 uppercase tracking-wider text-[10px]">
+                    Watermark / Logo
+                  </span>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => logoUploadRef.current?.click()}
+                    disabled={isUploadingAsset}
+                    className="gap-1 text-[10px]"
+                  >
+                    {isUploadingAsset ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
+                    Upload Logo
+                  </Button>
+                </div>
+
+                <select
+                  value={editJson.watermark?.asset_id || ''}
+                  onChange={(e) =>
+                    updateEdit((prev) => ({
+                      ...prev,
+                      watermark: e.target.value
+                        ? {
+                            asset_id: e.target.value,
+                            position: prev.watermark?.position || 'tr',
+                            size_pct: prev.watermark?.size_pct || 15,
+                            opacity: prev.watermark?.opacity || 85,
+                            margin_pct: prev.watermark?.margin_pct || 5,
+                          }
+                        : null,
+                    }))
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-surface-border text-white text-xs"
+                >
+                  <option value="">No Watermark</option>
+                  {userAssets
+                    .filter((a) => a.asset_type === 'image')
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                </select>
+
+                {editJson.watermark?.asset_id && (
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-surface-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Position:</span>
+                      <div className="grid grid-cols-4 gap-1">
+                        {(['tl', 'tr', 'bl', 'br'] as WatermarkPosition[]).map((pos) => (
+                          <button
+                            key={pos}
+                            onClick={() =>
+                              updateEdit((prev) => ({
+                                ...prev,
+                                watermark: prev.watermark ? { ...prev.watermark, position: pos } : null,
+                              }))
+                            }
+                            className={`px-2 py-1 rounded text-[10px] uppercase font-bold border transition ${
+                              editJson.watermark?.position === pos
+                                ? 'border-brand-500 bg-brand-500/20 text-white'
+                                : 'border-surface-border text-slate-400'
+                            }`}
+                          >
+                            {pos}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Size ({editJson.watermark.size_pct}%):</span>
+                      <input
+                        type="range"
+                        min="5"
+                        max="40"
+                        value={editJson.watermark.size_pct}
+                        onChange={(e) =>
+                          updateEdit((prev) => ({
+                            ...prev,
+                            watermark: prev.watermark
+                              ? { ...prev.watermark, size_pct: parseInt(e.target.value) }
+                              : null,
+                          }))
+                        }
+                        className="w-28 accent-brand-500 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Opacity ({editJson.watermark.opacity}%):</span>
+                      <input
+                        type="range"
+                        min="10"
+                        max="100"
+                        value={editJson.watermark.opacity}
+                        onChange={(e) =>
+                          updateEdit((prev) => ({
+                            ...prev,
+                            watermark: prev.watermark
+                              ? { ...prev.watermark, opacity: parseInt(e.target.value) }
+                              : null,
+                          }))
+                        }
+                        className="w-28 accent-brand-500 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* OUTRO PANEL */}
+              <div className="space-y-3 pt-3 border-t border-surface-border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-slate-200 block text-xs">Outro Bumper Card</span>
+                    <span className="text-[11px] text-slate-400">Appended to video end</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={editJson.outro?.enabled || false}
+                    onChange={(e) =>
+                      updateEdit((prev) => ({
+                        ...prev,
+                        outro: prev.outro
+                          ? { ...prev.outro, enabled: e.target.checked }
+                          : {
+                              enabled: e.target.checked,
+                              template: 'subscribe',
+                              text: 'Subscribe for More!',
+                              duration_s: 3,
+                              bg_color: '#0A0A0F',
+                              text_color: '#FFFFFF',
+                            },
+                      }))
+                    }
+                    className="w-4 h-4 rounded text-brand-600 focus:ring-brand-500 cursor-pointer"
+                  />
+                </div>
+
+                {editJson.outro?.enabled && (
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-surface-border space-y-3">
+                    <div>
+                      <span className="text-slate-400 block mb-1.5">Template Style:</span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { id: 'subscribe', label: 'Subscribe' },
+                          { id: 'follow', label: 'Follow' },
+                          { id: 'custom_text', label: 'Custom' },
+                        ].map((tpl) => (
+                          <button
+                            key={tpl.id}
+                            onClick={() =>
+                              updateEdit((prev) => ({
+                                ...prev,
+                                outro: prev.outro ? { ...prev.outro, template: tpl.id as OutroTemplate } : null,
+                              }))
+                            }
+                            className={`p-1.5 rounded text-[11px] font-semibold border transition ${
+                              editJson.outro?.template === tpl.id
+                                ? 'border-brand-500 bg-brand-500/20 text-white'
+                                : 'border-surface-border text-slate-400'
+                            }`}
+                          >
+                            {tpl.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 block mb-1">Headline Text:</span>
+                      <input
+                        type="text"
+                        value={editJson.outro.text}
+                        onChange={(e) =>
+                          updateEdit((prev) => ({
+                            ...prev,
+                            outro: prev.outro ? { ...prev.outro, text: e.target.value } : null,
+                          }))
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-surface-border text-white text-xs focus:outline-none focus:border-brand-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Duration ({editJson.outro.duration_s}s):</span>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        value={editJson.outro.duration_s}
+                        onChange={(e) =>
+                          updateEdit((prev) => ({
+                            ...prev,
+                            outro: prev.outro ? { ...prev.outro, duration_s: parseInt(e.target.value) } : null,
+                          }))
+                        }
+                        className="w-28 accent-brand-500 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-center text-[10px]">
+                      <div className="p-2 rounded bg-slate-900 border border-surface-border">
+                        <span className="text-slate-400 block mb-1">Background</span>
+                        <input
+                          type="color"
+                          value={editJson.outro.bg_color}
+                          onChange={(e) =>
+                            updateEdit((prev) => ({
+                              ...prev,
+                              outro: prev.outro ? { ...prev.outro, bg_color: e.target.value } : null,
+                            }))
+                          }
+                          className="w-6 h-6 mx-auto cursor-pointer block bg-transparent"
+                        />
+                      </div>
+                      <div className="p-2 rounded bg-slate-900 border border-surface-border">
+                        <span className="text-slate-400 block mb-1">Text Color</span>
+                        <input
+                          type="color"
+                          value={editJson.outro.text_color}
+                          onChange={(e) =>
+                            updateEdit((prev) => ({
+                              ...prev,
+                              outro: prev.outro ? { ...prev.outro, text_color: e.target.value } : null,
+                            }))
+                          }
+                          className="w-6 h-6 mx-auto cursor-pointer block bg-transparent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1660,7 +1943,11 @@ export default function Editor() {
 
           <div className="flex items-center gap-3">
             <span className="text-slate-400 text-xs">
-              Trimmed: <strong className="text-white font-mono">{trimmedDuration.toFixed(1)}s</strong>
+              Total Length:{' '}
+              <strong className="text-white font-mono">
+                {totalDuration.toFixed(1)}s
+                {editJson.outro?.enabled && ` (${(editJson.trim.out - editJson.trim.in).toFixed(1)}s clip + ${editJson.outro.duration_s}s outro)`}
+              </strong>
             </span>
 
             {isOver60s && (
@@ -1680,6 +1967,7 @@ export default function Editor() {
         </div>
 
         <div className="relative h-12 bg-slate-900 rounded-xl border border-surface-border p-1 flex items-center overflow-hidden">
+          {/* Clip Range */}
           <div
             className="absolute top-1 bottom-1 bg-brand-500/20 border-x-2 border-brand-500 rounded z-10 pointer-events-none"
             style={{
@@ -1688,6 +1976,20 @@ export default function Editor() {
             }}
           />
 
+          {/* Outro Bumper Highlight on Timeline */}
+          {editJson.outro?.enabled && (
+            <div
+              className="absolute top-1 bottom-1 bg-red-600/30 border-r-2 border-red-500 rounded-r z-10 pointer-events-none flex items-center justify-center"
+              style={{
+                left: `${(editJson.trim.out / Math.max(1, duration)) * 100}%`,
+                width: `${(editJson.outro.duration_s / Math.max(1, duration)) * 100}%`,
+              }}
+            >
+              <span className="text-[9px] text-red-300 font-bold uppercase truncate px-1">Outro</span>
+            </div>
+          )}
+
+          {/* Playhead */}
           <div
             className="absolute top-0 bottom-0 w-0.5 bg-white z-20 pointer-events-none shadow"
             style={{ left: `${(currentTime / Math.max(1, duration)) * 100}%` }}
@@ -1734,58 +2036,4 @@ function formatTime(seconds: number): string {
   const s = Math.floor(seconds % 60)
   const ms = Math.floor((seconds % 1) * 10)
   return `${m}:${s.toString().padStart(2, '0')}.${ms}`
-}
-
-function stripHtml(input: string): string {
-  return input.replace(/<\/?[^>]+(>|$)/g, '')
-}
-
-function parseSubtitleTextToWords(rawContent: string): CaptionWord[] {
-  const clean = stripHtml(rawContent)
-  const words: CaptionWord[] = []
-
-  // Simple, robust SRT/VTT parser
-  // Matches timestamps like 00:00:01,234 --> 00:00:04,567 or 00:00:01.234 --> 00:00:04.567
-  const cueRegex = /(\d{1,2}:(?:\d{2}:)?\d{2}[,.]\d{2,3})\s*-->\s*(\d{1,2}:(?:\d{2}:)?\d{2}[,.]\d{2,3})/g
-  const blocks = clean.split(/\n\s*\n/)
-
-  for (const block of blocks) {
-    const match = cueRegex.exec(block)
-    if (!match) continue
-
-    const startSec = parseTimestamp(match[1])
-    const endSec = parseTimestamp(match[2])
-    const textLines = block
-      .replace(cueRegex, '')
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l && !/^\d+$/.test(l))
-    const cueText = textLines.join(' ')
-
-    const cueWords = cueText.split(/\s+/).filter((w) => w.trim().length > 0)
-    if (cueWords.length === 0) continue
-
-    const wordDuration = Math.max(0.15, (endSec - startSec) / cueWords.length)
-    for (let i = 0; i < cueWords.length; i++) {
-      const wStart = round2(startSec + i * wordDuration)
-      const wEnd = round2(Math.min(endSec, wStart + wordDuration))
-      words.push({
-        text: cueWords[i],
-        start: wStart,
-        end: wEnd,
-      })
-    }
-  }
-
-  return words
-}
-
-function parseTimestamp(ts: string): number {
-  const parts = ts.replace(',', '.').split(':')
-  if (parts.length === 3) {
-    return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2])
-  } else if (parts.length === 2) {
-    return parseFloat(parts[0]) * 60 + parseFloat(parts[1])
-  }
-  return parseFloat(ts) || 0
 }

@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.enums import AspectRatio, ClipStatus, JobStatus, JobType, SubscriptionPlan, VideoStatus
 
@@ -252,14 +252,65 @@ class TrimConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class MusicConfig(BaseModel):
+    asset_id: str | None = None
+    volume: int = Field(default=50, ge=0, le=100)
+    fade_in_s: float = Field(default=1.0, ge=0.0, le=10.0)
+    fade_out_s: float = Field(default=1.5, ge=0.0, le=10.0)
+    duck_under_speech: bool = True
+
+
+class AudioConfig(BaseModel):
+    original_volume: int = Field(default=100, ge=0, le=200)
+    music: MusicConfig = Field(default_factory=MusicConfig)
+
+
+class WatermarkConfig(BaseModel):
+    asset_id: str | None = None
+    position: Literal["tl", "tr", "bl", "br"] = "tr"
+    size_pct: int = Field(default=15, ge=5, le=40)
+    opacity: int = Field(default=85, ge=10, le=100)
+    margin_pct: int = Field(default=5, ge=0, le=20)
+
+
+class OutroConfig(BaseModel):
+    enabled: bool = False
+    template: Literal["subscribe", "follow", "custom_text"] = "subscribe"
+    text: str = Field(default="Subscribe for More!", max_length=200)
+    duration_s: int = Field(default=3, ge=1, le=5)
+    bg_color: str = "#0A0A0F"
+    text_color: str = "#FFFFFF"
+
+
 class ClipEditJson(BaseModel):
     trim: TrimConfig
     aspect: Literal["9:16", "1:1", "4:5"] = "9:16"
     framing: FramingConfig = Field(default_factory=FramingConfig)
     background: BackgroundConfig = Field(default_factory=BackgroundConfig)
     captions: CaptionsEditConfig = Field(default_factory=CaptionsEditConfig)
-    outro: Any = None
-    watermark: Any = None
+    audio: AudioConfig = Field(default_factory=AudioConfig)
+    watermark: WatermarkConfig | None = None
+    outro: OutroConfig | None = None
+
+    @model_validator(mode="after")
+    def validate_total_duration(self) -> "ClipEditJson":
+        trim_dur = self.trim.out_val - self.trim.in_val
+        outro_dur = self.outro.duration_s if (self.outro and self.outro.enabled) else 0
+        if (trim_dur + outro_dur) > 180.0:
+            raise ValueError(f"Total video duration including outro ({trim_dur + outro_dur}s) exceeds 180 seconds")
+        return self
+
+
+class AssetOut(BaseModel):
+    id: str
+    user_id: str
+    name: str
+    asset_type: Literal["image", "audio"]
+    file_path: str
+    file_url: str
+    size_bytes: int
+    mime_type: str
+    created_at: str
 
 
 class ClipEditPayload(BaseModel):

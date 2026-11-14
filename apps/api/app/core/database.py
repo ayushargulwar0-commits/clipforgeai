@@ -65,3 +65,57 @@ async def health_check_db() -> bool:
     except Exception as exc:  # pragma: no cover
         logger.error("Supabase health check failed: %s", exc)
         return False
+
+
+# ---------------------------------------------------------------------------
+# Relational Database Storage (clip_edits, assets)
+# ---------------------------------------------------------------------------
+import sqlite3
+from pathlib import Path
+
+_SQLITE_DB_PATH = Path("storage/clipforge.db")
+
+
+def get_sqlite_conn() -> sqlite3.Connection:
+    """Returns thread-safe connection to the real relational database file."""
+    _SQLITE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(_SQLITE_DB_PATH), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_local_db():
+    """Initializes tables for clip_edits and assets."""
+    conn = get_sqlite_conn()
+    with conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS clip_edits (
+                clip_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                edit_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_clip_edits_user ON clip_edits(user_id);")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS assets (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                asset_type TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_url TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                mime_type TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_user ON assets(user_id);")
+
+
+# Initialize on module load
+try:
+    init_local_db()
+except Exception as e:
+    logger.debug("Database initialization notice: %s", e)
+

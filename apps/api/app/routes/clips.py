@@ -631,27 +631,11 @@ async def render_selective_section(req: SelectiveRenderRequest):
 
 
 # ---------------------------------------------------------------------------
-# Phase 6A: Clip Editor (Shell, Trim, Framing & Layout)
+# Phase 6A & 6B & 6C: Clip Editor (Trim, Framing, Captions, Audio, Media)
 # ---------------------------------------------------------------------------
 
 import json
-_LOCAL_CLIP_EDITS_FILE = Path("storage/clip_edits.json")
-
-
-def _load_local_clip_edits() -> dict[str, dict]:
-    if _LOCAL_CLIP_EDITS_FILE.exists():
-        try:
-            with open(_LOCAL_CLIP_EDITS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
-
-
-def _save_local_clip_edits(data: dict[str, dict]) -> None:
-    _LOCAL_CLIP_EDITS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_LOCAL_CLIP_EDITS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+from app.core.database import get_sqlite_conn
 
 
 def _get_clip_record(clip_id: str, user_id: str) -> dict:
@@ -684,7 +668,7 @@ async def get_clip_edit(
     user_id = get_user_id(user)
     clip = _get_clip_record(clip_id, user_id)
 
-    # 1. Check database
+    # 1. Check Supabase database
     client = get_supabase()
     try:
         resp = client.table("clip_edits").select("*").eq("clip_id", clip_id).single().execute()
@@ -702,17 +686,18 @@ async def get_clip_edit(
     except Exception:
         pass
 
-    # 2. Check local fallback storage
-    local_edits = _load_local_clip_edits()
-    if clip_id in local_edits:
-        record = local_edits[clip_id]
-        if record.get("user_id") and record.get("user_id") != user_id:
-            _assert_clip_ownership({"owner_id": record["user_id"]}, user_id)
+    # 2. Check relational SQLite database (source of truth)
+    conn = get_sqlite_conn()
+    row = conn.execute("SELECT * FROM clip_edits WHERE clip_id = ?", (clip_id,)).fetchone()
+    if row:
+        if row["user_id"] and row["user_id"] != user_id:
+            _assert_clip_ownership({"owner_id": row["user_id"]}, user_id)
+        edit_data = json.loads(row["edit_json"]) if isinstance(row["edit_json"], str) else row["edit_json"]
         return ClipEditOut(
             clip_id=clip_id,
             user_id=user_id,
-            edit_json=record["edit_json"],
-            updated_at=record.get("updated_at", _utcnow()),
+            edit_json=edit_data,
+            updated_at=row["updated_at"],
         )
 
     # 3. Default initial edit state derived from clip
@@ -721,7 +706,6 @@ async def get_clip_edit(
     if c_end <= c_start:
         c_end = c_start + 30.0
 
-    # Extract default words from clip transcript if available
     words: list[dict[str, Any]] = []
     transcript_text = str(clip.get("transcript_text") or "").strip()
     if transcript_text:
@@ -770,8 +754,25 @@ async def get_clip_edit(
             },
             "safe_zones": True,
         },
-        "outro": None,
+        "audio": {
+            "original_volume": 100,
+            "music": {
+                "asset_id": None,
+                "volume": 50,
+                "fade_in_s": 1.0,
+                "fade_out_s": 1.5,
+                "duck_under_speech": True,
+            },
+        },
         "watermark": None,
+        "outro": {
+            "enabled": False,
+            "template": "subscribe",
+            "text": "Subscribe for More!",
+            "duration_s": 3,
+            "bg_color": "#0A0A0F",
+            "text_color": "#FFFFFF",
+        },
     }
 
     return ClipEditOut(
@@ -793,24 +794,33 @@ async def update_clip_edit(
 
     edit_data = payload.edit_json.model_dump(by_alias=True)
     now_ts = _utcnow()
-    record = {
-        "clip_id": clip_id,
-        "user_id": user_id,
-        "edit_json": edit_data,
-        "updated_at": now_ts,
-    }
 
-    # 1. Save to Supabase table clip_edits if available
+    # 1. Primary Store: Relational Database table clip_edits
+    conn = get_sqlite_conn()
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO clip_edits (clip_id, user_id, edit_json, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(clip_id) DO UPDATE SET
+                user_id = excluded.user_id,
+                edit_json = excluded.edit_json,
+                updated_at = excluded.updated_at
+            """,
+            (clip_id, user_id, json.dumps(edit_data), now_ts),
+        )
+
+    # 2. Sync to Supabase if connected
     client = get_supabase()
     try:
-        client.table("clip_edits").upsert(record).execute()
+        client.table("clip_edits").upsert({
+            "clip_id": clip_id,
+            "user_id": user_id,
+            "edit_json": edit_data,
+            "updated_at": now_ts,
+        }).execute()
     except Exception as exc:
-        logger.debug("Supabase upsert clip_edits skipped / fallback to local: %s", exc)
-
-    # 2. Always persist to local cache so changes survive restarts
-    local_edits = _load_local_clip_edits()
-    local_edits[clip_id] = record
-    _save_local_clip_edits(local_edits)
+        logger.debug("Supabase upsert clip_edits notice: %s", exc)
 
     return ClipEditOut(
         clip_id=clip_id,

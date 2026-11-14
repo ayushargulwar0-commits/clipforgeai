@@ -43,6 +43,11 @@ def captions_to_ass(edit_json: dict[str, Any]) -> str:
     - Groups words by words_per_line.
     - Implements karaoke styling (primary text color vs highlight color).
     - Respects safe zones (~20% margin bottom on 1080x1920) and positions (top, middle, lower_third).
+    - References bundled Noto Sans and Noto Sans Devanagari fonts by name.
+    
+    NOTE for FFmpeg export rendering:
+      The FFmpeg subtitles filter command must pass fontsdir:
+      -vf "subtitles=sub.ass:fontsdir=/app/fonts"
     """
     trim_in = float(edit_json.get("trim", {}).get("in", 0.0) or 0.0)
     trim_out = float(edit_json.get("trim", {}).get("out", 60.0) or 60.0)
