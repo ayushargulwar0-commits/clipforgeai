@@ -12,6 +12,7 @@ import Pricing        from '@/pages/Pricing'
 import FAQ            from '@/pages/FAQ'
 import About          from '@/pages/About'
 import Contact        from '@/pages/Contact'
+import NotFound       from '@/pages/NotFound'
 import Login          from '@/pages/auth/Login'
 import Signup         from '@/pages/auth/Signup'
 import ForgotPassword from '@/pages/auth/ForgotPassword'
@@ -88,7 +89,7 @@ export default function App() {
             </Route>
 
             {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
       </ToastProvider>

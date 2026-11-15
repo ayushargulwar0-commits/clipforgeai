@@ -1,9 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "dist",
   "cleanUrls": true,
   "rewrites": [
     {
-      "source": "/((?!api|storage|.*\\..*).*)",
+      "source": "/api/:match*",
+      "destination": "/api/:match*"
+    },
+    {
+      "source": "/storage/:match*",
+      "destination": "/storage/:match*"
+    },
+    {
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
