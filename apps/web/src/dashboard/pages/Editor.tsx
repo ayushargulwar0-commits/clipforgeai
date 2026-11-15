@@ -315,10 +315,12 @@ export default function Editor() {
   // Playback State
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(60)
+  const [duration, setDuration] = useState(0)
   const [loopTrim, setLoopTrim] = useState(true)
-  const [videoUrl, setVideoUrl] = useState<string>(SAMPLE_HORIZONTAL_VIDEO)
+  const [videoUrl, setVideoUrl] = useState<string>('')
   const [clipTitle, setClipTitle] = useState<string>('My Short Clip')
+  const [videoError, setVideoError] = useState<string | null>(null)
+  const [thumbnails, setThumbnails] = useState<string[]>([])
 
   // UI State
   const [activeTab, setActiveTab] = useState<'framing' | 'text' | 'audio' | 'media'>('framing')
@@ -401,6 +403,45 @@ export default function Editor() {
   }, [fetchUserAssets])
 
   // -------------------------------------------------------------------------
+  // Handlers for Video Stream & Metadata
+  // -------------------------------------------------------------------------
+  const handleLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const vid = e.currentTarget
+    if (vid.duration && !isNaN(vid.duration) && vid.duration > 0) {
+      setDuration(vid.duration)
+      setVideoError(null)
+      setEditJson((prev) => {
+        const targetOut = prev.trim.out > vid.duration || prev.trim.out === 60 ? vid.duration : prev.trim.out
+        if (targetOut !== prev.trim.out && targetOut > prev.trim.in) {
+          return { ...prev, trim: { ...prev.trim, out: targetOut } }
+        }
+        return prev
+      })
+    }
+  }, [])
+
+  const handleVideoError = useCallback(async (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const vid = e.currentTarget
+    let msg = 'Failed to load video stream.'
+    if (vid.error) {
+      if (vid.error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+        msg = 'HTTP 401/404 or unsupported video codec.'
+      } else if (vid.error.code === MediaError.MEDIA_ERR_NETWORK) {
+        msg = 'Network error while streaming video.'
+      }
+    }
+    try {
+      await api.get(`/clips/${clipId}/stream`)
+    } catch (err: any) {
+      const code = err?.response?.status
+      if (code) {
+        msg = `HTTP ${code}: ${err?.response?.data?.detail || err?.message || 'Access Denied / Not Found'}`
+      }
+    }
+    setVideoError(msg)
+  }, [clipId])
+
+  // -------------------------------------------------------------------------
   // 1. Data Loading: GET /clips/{id}/edit & Clip Details
   // -------------------------------------------------------------------------
   useEffect(() => {
@@ -408,13 +449,36 @@ export default function Editor() {
 
     async function loadClipData() {
       try {
+        // 1. Fetch short-lived signed stream token
+        let streamToken: string | null = null
+        try {
+          const tokenRes = await api.post(`/clips/${clipId}/stream-token`)
+          streamToken = tokenRes?.data?.token || null
+        } catch (_) {}
+
+        if (streamToken && isMounted) {
+          setVideoUrl(`/api/clips/${clipId}/stream?token=${encodeURIComponent(streamToken)}`)
+        }
+
+        // 2. Load timeline thumbnail frames
+        api
+          .get(`/clips/${clipId}/thumbnails${streamToken ? `?token=${encodeURIComponent(streamToken)}` : ''}`)
+          .then((tRes) => {
+            if (tRes?.data?.thumbnails && isMounted) {
+              setThumbnails(tRes.data.thumbnails)
+            }
+          })
+          .catch(() => {})
+
         const clipRes = await api.get(`/clips/${clipId}`).catch(() => null)
         if (clipRes?.data && isMounted) {
           if (clipRes.data.title) setClipTitle(clipRes.data.title)
-          if (clipRes.data.source_url) {
-            setVideoUrl(clipRes.data.source_url)
-          } else if (clipRes.data.rendered_path) {
-            setVideoUrl(`/storage/clips/${clipRes.data.rendered_path.split(/[\/\\]/).pop()}`)
+          if (!streamToken) {
+            if (clipRes.data.source_url) {
+              setVideoUrl(clipRes.data.source_url)
+            } else if (clipRes.data.rendered_path) {
+              setVideoUrl(`/storage/clips/${clipRes.data.rendered_path.split(/[\/\\]/).pop()}`)
+            }
           }
         }
 
@@ -1111,15 +1175,27 @@ export default function Editor() {
             {/* Video Foreground Container */}
             {!isShowingOutro && (
               <div className="absolute inset-0 z-10 overflow-hidden flex items-center justify-center">
+                {videoError && (
+                  <div className="absolute inset-0 z-30 bg-black/90 flex flex-col items-center justify-center p-6 text-center text-rose-300 space-y-3">
+                    <AlertTriangle className="w-10 h-10 text-rose-500 animate-pulse" />
+                    <div className="text-sm font-semibold text-white">Stream Playback Error</div>
+                    <div className="text-xs text-rose-400 font-mono bg-rose-950/60 p-2.5 rounded-lg border border-rose-800/50 max-w-xs break-words">
+                      {videoError}
+                    </div>
+                    <Button size="xs" variant="outline" onClick={() => window.location.reload()} className="mt-2 text-xs">
+                      Retry Stream
+                    </Button>
+                  </div>
+                )}
+
                 {editJson.framing.mode === 'crop' && (
                   <div className="relative w-full h-full overflow-hidden">
                     <video
                       ref={videoRef}
                       src={videoUrl}
                       onTimeUpdate={handleTimeUpdate}
-                      onLoadedMetadata={() => {
-                        if (videoRef.current) setDuration(videoRef.current.duration)
-                      }}
+                      onLoadedMetadata={handleLoadedMetadata}
+                      onError={handleVideoError}
                       playsInline
                       className="absolute max-w-none pointer-events-none"
                       style={{
@@ -1138,9 +1214,8 @@ export default function Editor() {
                     ref={videoRef}
                     src={videoUrl}
                     onTimeUpdate={handleTimeUpdate}
-                    onLoadedMetadata={() => {
-                      if (videoRef.current) setDuration(videoRef.current.duration)
-                    }}
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onError={handleVideoError}
                     playsInline
                     className="w-full object-contain pointer-events-none z-10"
                   />
@@ -1153,6 +1228,8 @@ export default function Editor() {
                         ref={videoRef}
                         src={videoUrl}
                         onTimeUpdate={handleTimeUpdate}
+                        onLoadedMetadata={handleLoadedMetadata}
+                        onError={handleVideoError}
                         playsInline
                         className="absolute max-w-none pointer-events-none"
                         style={{
@@ -1967,6 +2044,24 @@ export default function Editor() {
         </div>
 
         <div className="relative h-12 bg-slate-900 rounded-xl border border-surface-border p-1 flex items-center overflow-hidden">
+          {/* Timeline Thumbnail Strip */}
+          <div className="absolute inset-0 flex overflow-hidden opacity-45 pointer-events-none select-none rounded-xl">
+            {thumbnails.length > 0 ? (
+              thumbnails.map((src, i) => (
+                <img
+                  key={i}
+                  src={src}
+                  alt={`Frame ${i}`}
+                  className="flex-1 h-full object-cover border-r border-black/30"
+                />
+              ))
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500 font-mono">
+                {videoError ? 'Video Unavailable' : 'Generating timeline frames...'}
+              </div>
+            )}
+          </div>
+
           {/* Clip Range */}
           <div
             className="absolute top-1 bottom-1 bg-brand-500/20 border-x-2 border-brand-500 rounded z-10 pointer-events-none"

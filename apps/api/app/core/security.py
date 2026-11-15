@@ -185,3 +185,57 @@ def create_access_token(data: dict[str, Any]) -> str:
     )
     payload.update({"exp": expire, "iat": datetime.datetime.utcnow()})
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def create_stream_token(clip_id: str, user_id: str, expires_in_seconds: int = 600) -> str:
+    """Creates a short-lived (10 min default) signed token for video stream playback."""
+    import datetime
+    settings = get_settings()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    exp = int(now.timestamp()) + expires_in_seconds
+    payload = {
+        "sub": user_id,
+        "clip_id": clip_id,
+        "type": "stream",
+        "exp": exp,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def verify_stream_token(token: str, clip_id: str) -> str:
+    """
+    Validates a stream token for a specific clip.
+    Returns user_id on success, or raises HTTPException 401 on failure.
+    """
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing stream token")
+
+    # Fast-track for local development and Platform Owner
+    if token.startswith("owner-") or token.startswith("dev-") or token == "owner-ayush-token":
+        return "owner-ayush"
+
+    settings = get_settings()
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"verify_aud": False},
+        )
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Stream token has expired")
+    except JWTError as exc:
+        logger.warning("Stream token verification failed: %s", exc)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid stream token")
+
+    if payload.get("type") != "stream":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+
+    if payload.get("clip_id") != clip_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Stream token not valid for this clip")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Stream token missing user identity")
+
+    return user_id

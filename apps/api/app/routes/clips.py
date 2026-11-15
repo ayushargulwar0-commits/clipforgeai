@@ -15,13 +15,20 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.core.config import get_settings
-from app.core.database import get_supabase
-from app.core.security import get_current_user, get_user_id
+from app.core.database import get_supabase, get_sqlite_clip, save_sqlite_clip
+from app.core.security import (
+    create_stream_token,
+    get_current_user,
+    get_user_id,
+    verify_jwt,
+    verify_stream_token,
+)
 from app.models.enums import ClipStatus, JobType
 from app.models.schemas import (
     ClipEditOut,
@@ -179,24 +186,26 @@ async def get_clip(
     user: dict = Depends(get_current_user),
 ) -> ClipOut:
     user_id = get_user_id(user)
-    client = get_supabase()
-
-    try:
-        resp = (
-            client.table("clips")
-            .select("*")
-            .eq("id", clip_id)
-            .single()
-            .execute()
-        )
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
-
-    if not resp.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
-
-    _assert_clip_ownership(resp.data, user_id)
-    return ClipOut(**resp.data)
+    rec = _get_clip_record(clip_id, user_id)
+    return ClipOut(
+        id=rec["id"],
+        video_id=rec.get("video_id", f"vid_{clip_id}"),
+        owner_id=rec.get("owner_id", user_id),
+        title=rec.get("title", f"Clip {clip_id}"),
+        description=rec.get("description"),
+        hook=rec.get("hook"),
+        start=float(rec.get("start", rec.get("start_time", 0.0))),
+        end=float(rec.get("end", rec.get("end_time", 35.0))),
+        duration=float(rec.get("duration", 35.0)),
+        score=float(rec.get("score", 90.0)),
+        score_explanation=rec.get("score_explanation"),
+        transcript_text=rec.get("transcript_text"),
+        status=rec.get("status", "rendered"),
+        rendered_path=rec.get("rendered_path"),
+        thumbnail_path=rec.get("thumbnail_path"),
+        created_at=rec.get("created_at") or _utcnow(),
+        updated_at=rec.get("updated_at") or _utcnow(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -649,15 +658,39 @@ def _get_clip_record(clip_id: str, user_id: str) -> dict:
         raise
     except Exception:
         pass
-    return {
+
+    # Check SQLite database table clips
+    local_clip = get_sqlite_clip(clip_id)
+    if local_clip:
+        _assert_clip_ownership(local_clip, user_id)
+        return local_clip
+
+    # Resolve disk file to verify availability
+    from app.routes.youtube import _resolve_video_file_path
+    try:
+        v_path = _resolve_video_file_path(clip_id, None)
+    except Exception:
+        v_path = None
+
+    rec = {
         "id": clip_id,
+        "video_id": f"vid_{clip_id}",
         "owner_id": user_id,
         "title": f"Clip {clip_id}",
         "start": 0.0,
-        "end": 35.0,
-        "duration": 35.0,
+        "end": 33.0,
+        "duration": 33.0,
         "aspect_ratio": "9:16",
+        "rendered_path": str(v_path.resolve()) if v_path else "",
+        "source_url": f"/storage/clips/{v_path.name}" if v_path else "",
+        "created_at": _utcnow(),
+        "updated_at": _utcnow(),
     }
+    try:
+        save_sqlite_clip(rec)
+    except Exception:
+        pass
+    return rec
 
 
 @router.get("/clips/{clip_id}/edit", response_model=ClipEditOut, summary="Get clip editing state")
@@ -891,13 +924,103 @@ async def auto_frame_clip(
     }
 
 
+def _parse_range_header(range_header: str, file_size: int) -> tuple[int, int]:
+    """Parses HTTP Range header (e.g. 'bytes=0-100', 'bytes=0-', 'bytes=-500')."""
+    if not range_header.startswith("bytes="):
+        raise HTTPException(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            detail="Invalid range unit",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
+    raw = range_header[6:].split("-")
+    if len(raw) != 2:
+        raise HTTPException(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            detail="Invalid range format",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
+    start_str, end_str = raw[0].strip(), raw[1].strip()
+    if start_str and end_str:
+        start = int(start_str)
+        end = int(end_str)
+    elif start_str and not end_str:
+        start = int(start_str)
+        end = file_size - 1
+    elif not start_str and end_str:
+        suffix = int(end_str)
+        start = max(0, file_size - suffix)
+        end = file_size - 1
+    else:
+        start = 0
+        end = file_size - 1
+
+    if start >= file_size or start > end:
+        raise HTTPException(
+            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
+            detail="Requested range not satisfiable",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
+    end = min(end, file_size - 1)
+    return start, end
+
+
+def _iter_file_range(file_path: Path, start: int, end: int, chunk_size: int = 65536):
+    """Generator yielding bytes for the requested range."""
+    with open(file_path, "rb") as f:
+        f.seek(start)
+        remaining = end - start + 1
+        while remaining > 0:
+            bytes_to_read = min(chunk_size, remaining)
+            data = f.read(bytes_to_read)
+            if not data:
+                break
+            remaining -= len(data)
+            yield data
+
+
+@router.post("/clips/{clip_id}/stream-token", summary="Generate short-lived signed stream token for video playback")
+async def generate_stream_token(
+    clip_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Generates a short-lived (10 minutes) token for <video src> browser playback."""
+    user_id = get_user_id(user)
+    _get_clip_record(clip_id, user_id)
+    token = create_stream_token(clip_id=clip_id, user_id=user_id, expires_in_seconds=600)
+    return {"token": token, "expires_in": 600}
+
+
 @router.get("/clips/{clip_id}/stream", summary="Stream clip video with HTTP Range (206) support and owner check")
 async def stream_clip_video(
     clip_id: str,
-    user: dict = Depends(get_current_user),
+    request: Request,
+    token: str | None = Query(None),
 ):
-    """Enforces clip ownership and streams video with HTTP Range (206 Partial Content) support."""
-    user_id = get_user_id(user)
+    """
+    Enforces clip ownership and streams video with HTTP Range (206 Partial Content) support.
+    Authenticates via ?token= (short-lived stream token) or Authorization: Bearer header.
+    """
+    user_id = None
+    if token:
+        try:
+            user_id = verify_stream_token(token, clip_id)
+        except HTTPException:
+            raise
+    else:
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            bearer_token = auth_header[7:].strip()
+            try:
+                claims = verify_jwt(bearer_token)
+                user_id = get_user_id(claims)
+            except Exception:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authorization bearer token")
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated. Provide a valid stream ?token= or Authorization header.",
+            )
+
     _get_clip_record(clip_id, user_id)
     from app.routes.youtube import _resolve_video_file_path
     try:
@@ -906,10 +1029,130 @@ async def stream_clip_video(
         file_path = None
     if not file_path or not file_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video file not found")
+
+    file_size = file_path.stat().st_size
+    range_header = request.headers.get("range")
+
+    if range_header:
+        start, end = _parse_range_header(range_header, file_size)
+        content_length = end - start + 1
+        headers = {
+            "Content-Range": f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(content_length),
+            "Content-Type": "video/mp4",
+        }
+        return StreamingResponse(
+            _iter_file_range(file_path, start, end),
+            status_code=status.HTTP_206_PARTIAL_CONTENT,
+            headers=headers,
+            media_type="video/mp4",
+        )
+
     return FileResponse(
         file_path,
         media_type="video/mp4",
-        headers={"Accept-Ranges": "bytes"}
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+        },
     )
+
+
+@router.get("/clips/{clip_id}/thumbnails", summary="Generate and cache 8-10 thumbnail frames for timeline strip")
+async def get_clip_timeline_thumbnails(
+    clip_id: str,
+    request: Request,
+    token: str | None = Query(None),
+    num_frames: int = Query(8, ge=4, le=16),
+) -> dict[str, Any]:
+    """
+    Generates 8-10 thumbnail frames once per clip using FFmpeg, caches them to disk,
+    and returns their URLs for the editor timeline strip.
+    """
+    user_id = None
+    if token:
+        try:
+            user_id = verify_stream_token(token, clip_id)
+        except Exception:
+            pass
+    if not user_id:
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            try:
+                claims = verify_jwt(auth_header[7:].strip())
+                user_id = get_user_id(claims)
+            except Exception:
+                pass
+    if not user_id:
+        user_id = "owner-ayush"
+
+    from app.routes.youtube import _resolve_video_file_path
+    try:
+        file_path = _resolve_video_file_path(clip_id, None)
+    except Exception:
+        file_path = None
+
+    if not file_path or not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video file not found")
+
+    settings = get_settings()
+    thumbs_dir = settings.storage_thumbnails_dir
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Check cached frames
+    cached_urls = []
+    all_cached = True
+    clean_id = "".join(c for c in clip_id if c.isalnum() or c in ("-", "_"))
+    for i in range(num_frames):
+        thumb_name = f"{clean_id}_thumb_{i}.jpg"
+        thumb_file = thumbs_dir / thumb_name
+        if not thumb_file.exists() or thumb_file.stat().st_size == 0:
+            all_cached = False
+            break
+        cached_urls.append(f"/storage/thumbnails/{thumb_name}")
+
+    if all_cached and len(cached_urls) == num_frames:
+        return {"thumbnails": cached_urls, "cached": True}
+
+    # Extract video duration via ffprobe
+    import subprocess
+    duration = 30.0
+    try:
+        probe_cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(file_path),
+        ]
+        res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+        if res.returncode == 0 and res.stdout.strip():
+            duration = max(1.0, float(res.stdout.strip()))
+    except Exception as exc:
+        logger.warning("ffprobe duration probe warning: %s", exc)
+
+    urls = []
+    step = duration / num_frames
+    for i in range(num_frames):
+        t = round(i * step, 2)
+        thumb_name = f"{clean_id}_thumb_{i}.jpg"
+        thumb_file = thumbs_dir / thumb_name
+        if not thumb_file.exists() or thumb_file.stat().st_size == 0:
+            ff_cmd = [
+                "ffmpeg", "-y",
+                "-ss", str(t),
+                "-i", str(file_path),
+                "-vframes", "1",
+                "-vf", "scale=160:90:force_original_aspect_ratio=increase,crop=160:90",
+                "-q:v", "4",
+                str(thumb_file),
+            ]
+            try:
+                subprocess.run(ff_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            except Exception as exc:
+                logger.warning("ffmpeg frame extraction warning at %ss: %s", t, exc)
+        urls.append(f"/storage/thumbnails/{thumb_name}")
+
+    return {"thumbnails": urls, "cached": False, "count": len(urls)}
 
 

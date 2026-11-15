@@ -9,6 +9,7 @@ code path that could expose secrets to the client.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from functools import lru_cache
 
 from supabase import Client, create_client
@@ -85,7 +86,7 @@ def get_sqlite_conn() -> sqlite3.Connection:
 
 
 def init_local_db():
-    """Initializes tables for clip_edits and assets."""
+    """Initializes tables for clip_edits, assets, and clips."""
     conn = get_sqlite_conn()
     with conn:
         conn.execute("""
@@ -111,6 +112,77 @@ def init_local_db():
             );
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_user ON assets(user_id);")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS clips (
+                id TEXT PRIMARY KEY,
+                video_id TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                hook TEXT,
+                start REAL NOT NULL DEFAULT 0.0,
+                end REAL NOT NULL DEFAULT 30.0,
+                duration REAL NOT NULL DEFAULT 30.0,
+                score REAL DEFAULT 90.0,
+                score_explanation TEXT,
+                transcript_text TEXT,
+                status TEXT NOT NULL DEFAULT 'rendered',
+                rendered_path TEXT,
+                thumbnail_path TEXT,
+                source_url TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_user ON clips(owner_id);")
+
+
+def get_sqlite_clip(clip_id: str) -> dict | None:
+    """Retrieve clip record from SQLite database."""
+    conn = get_sqlite_conn()
+    row = conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
+    if row:
+        return dict(row)
+    return None
+
+
+def save_sqlite_clip(clip: dict) -> None:
+    """Insert or update clip record in SQLite database."""
+    conn = get_sqlite_conn()
+    with conn:
+        conn.execute("""
+            INSERT INTO clips (
+                id, video_id, owner_id, title, description, hook,
+                start, end, duration, score, score_explanation,
+                transcript_text, status, rendered_path, thumbnail_path,
+                source_url, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                description = excluded.description,
+                rendered_path = excluded.rendered_path,
+                source_url = excluded.source_url,
+                updated_at = excluded.updated_at
+        """, (
+            clip["id"],
+            clip.get("video_id", f"vid_{clip['id']}"),
+            clip.get("owner_id", "owner-ayush"),
+            clip.get("title", f"Clip {clip['id']}"),
+            clip.get("description", ""),
+            clip.get("hook", ""),
+            float(clip.get("start", clip.get("start_time", 0.0))),
+            float(clip.get("end", clip.get("end_time", 30.0))),
+            float(clip.get("duration", 30.0)),
+            float(clip.get("score", 90.0)),
+            clip.get("score_explanation", ""),
+            clip.get("transcript_text", ""),
+            clip.get("status", "rendered"),
+            clip.get("rendered_path", ""),
+            clip.get("thumbnail_path", ""),
+            clip.get("source_url", ""),
+            clip.get("created_at", datetime.now(timezone.utc).isoformat()),
+            clip.get("updated_at", datetime.now(timezone.utc).isoformat()),
+        ))
 
 
 # Initialize on module load
