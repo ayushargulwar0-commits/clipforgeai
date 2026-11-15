@@ -216,7 +216,36 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
             return p
 
     if clip_id:
-        # Check DB clips record
+        # Check SQLite DB first (instant local lookup)
+        try:
+            from app.core.database import get_sqlite_clip
+            local_clip = get_sqlite_clip(clip_id)
+            if local_clip:
+                r_path = local_clip.get("rendered_path")
+                if r_path and Path(r_path).is_file():
+                    return Path(r_path)
+                s_url = local_clip.get("source_url")
+                if s_url:
+                    name = Path(s_url).name
+                    if (settings.storage_clips_dir / name).is_file():
+                        return settings.storage_clips_dir / name
+        except Exception:
+            pass
+
+        candidates = [
+            settings.storage_clips_dir / f"clip_{clip_id}.mp4",
+            settings.storage_clips_dir / f"{clip_id}.mp4",
+            settings.storage_clips_dir / clip_id,
+            settings.storage_clips_dir / f"clip_{clip_id}_rendered.mp4",
+            settings.storage_clips_dir / f"clip_{clip_id}_section.mp4",
+            settings.storage_videos_dir / f"{clip_id}.mp4",
+            settings.storage_videos_dir / clip_id,
+        ]
+        for c in candidates:
+            if c.is_file():
+                return c
+
+        # Check remote DB clips record
         try:
             from app.core.database import get_supabase
             client = get_supabase()
@@ -232,18 +261,6 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
                         return settings.storage_clips_dir / name
         except Exception as exc:
             logger.debug("DB clip lookup skipped: %s", exc)
-
-        candidates = [
-            settings.storage_clips_dir / f"{clip_id}.mp4",
-            settings.storage_clips_dir / clip_id,
-            settings.storage_clips_dir / f"clip_{clip_id}_rendered.mp4",
-            settings.storage_clips_dir / f"clip_{clip_id}_section.mp4",
-            settings.storage_videos_dir / f"{clip_id}.mp4",
-            settings.storage_videos_dir / clip_id,
-        ]
-        for c in candidates:
-            if c.is_file():
-                return c
 
         if settings.storage_clips_dir.exists():
             for f in settings.storage_clips_dir.glob(f"*{clip_id}*"):

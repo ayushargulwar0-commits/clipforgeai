@@ -305,7 +305,24 @@ export default function Editor() {
   const navigate = useNavigate()
   const { success, error: toastError } = useToast()
 
-  const clipId = routeClipId || searchParams.get('clip') || 'clip-sample'
+  const clipId = routeClipId || searchParams.get('clip') || 'yt-clip-1794763864649-1'
+
+  // If no route clipId provided, redirect to user's first clip or to My Clips
+  useEffect(() => {
+    if (!routeClipId) {
+      try {
+        const saved = localStorage.getItem('cf_user_clips')
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.id) {
+            navigate(`/dashboard/editor/${parsed[0].id}`, { replace: true })
+            return
+          }
+        }
+      } catch (_) {}
+      navigate('/dashboard/clips', { replace: true })
+    }
+  }, [routeClipId, navigate])
 
   // Edit State & History
   const [editJson, setEditJson] = useState<EditJson>(DEFAULT_EDIT_JSON)
@@ -408,6 +425,7 @@ export default function Editor() {
   const handleLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const vid = e.currentTarget
     if (vid.duration && !isNaN(vid.duration) && vid.duration > 0) {
+      console.log('[Editor] Loaded metadata duration:', vid.duration)
       setDuration(vid.duration)
       setVideoError(null)
       setEditJson((prev) => {
@@ -423,23 +441,31 @@ export default function Editor() {
   const handleVideoError = useCallback(async (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const vid = e.currentTarget
     let msg = 'Failed to load video stream.'
+    const errCode = vid.error?.code
     if (vid.error) {
-      if (vid.error.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-        msg = 'HTTP 401/404 or unsupported video codec.'
-      } else if (vid.error.code === MediaError.MEDIA_ERR_NETWORK) {
-        msg = 'Network error while streaming video.'
+      if (errCode === 4) {
+        msg = 'MediaError 4 (SRC_NOT_SUPPORTED): Codec not supported or URL unreachable.'
+      } else if (errCode === 2) {
+        msg = 'MediaError 2 (NETWORK_NO_SOURCE): Network error during video stream.'
+      } else if (errCode === 3) {
+        msg = 'MediaError 3 (DECODE): Video decoding error.'
+      } else if (errCode === 1) {
+        msg = 'MediaError 1 (ABORTED): Playback aborted.'
       }
     }
     try {
-      await api.get(`/clips/${clipId}/stream`)
-    } catch (err: any) {
-      const code = err?.response?.status
-      if (code) {
-        msg = `HTTP ${code}: ${err?.response?.data?.detail || err?.message || 'Access Denied / Not Found'}`
+      if (vid.src) {
+        const check = await fetch(vid.src, { method: 'GET', headers: { Range: 'bytes=0-0' } })
+        if (!check.ok && check.status !== 206) {
+          msg = `HTTP ${check.status} ${check.statusText}: Stream endpoint error`
+        }
       }
+    } catch (netErr: any) {
+      msg = `${msg} [Fetch error: ${netErr.message}]`
     }
+    console.error('[Editor] Video error:', msg, vid.error)
     setVideoError(msg)
-  }, [clipId])
+  }, [])
 
   // -------------------------------------------------------------------------
   // 1. Data Loading: GET /clips/{id}/edit & Clip Details
@@ -449,26 +475,38 @@ export default function Editor() {
 
     async function loadClipData() {
       try {
+        const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
+
         // 1. Fetch short-lived signed stream token
         let streamToken: string | null = null
         try {
           const tokenRes = await api.post(`/clips/${clipId}/stream-token`)
           streamToken = tokenRes?.data?.token || null
-        } catch (_) {}
-
-        if (streamToken && isMounted) {
-          setVideoUrl(`/api/clips/${clipId}/stream?token=${encodeURIComponent(streamToken)}`)
+        } catch (tokErr: any) {
+          console.warn('[Editor] Failed to get stream token:', tokErr.message)
         }
 
-        // 2. Load timeline thumbnail frames
+        const finalStreamUrl = streamToken
+          ? `${apiBase}/clips/${clipId}/stream?token=${encodeURIComponent(streamToken)}`
+          : `${apiBase}/clips/${clipId}/stream`
+
+        console.log('[Editor] Final video src:', finalStreamUrl)
+        if (isMounted) {
+          setVideoUrl(finalStreamUrl)
+        }
+
+        // 2. Load timeline thumbnail frames (api client baseURL is already /api)
+        const thumbEndpoint = `/clips/${clipId}/thumbnails${streamToken ? `?token=${encodeURIComponent(streamToken)}` : ''}`
         api
-          .get(`/clips/${clipId}/thumbnails${streamToken ? `?token=${encodeURIComponent(streamToken)}` : ''}`)
+          .get(thumbEndpoint)
           .then((tRes) => {
             if (tRes?.data?.thumbnails && isMounted) {
               setThumbnails(tRes.data.thumbnails)
             }
           })
-          .catch(() => {})
+          .catch((tErr) => {
+            console.warn('[Editor] Thumbnails fetch failed:', tErr.message)
+          })
 
         const clipRes = await api.get(`/clips/${clipId}`).catch(() => null)
         if (clipRes?.data && isMounted) {
@@ -1193,6 +1231,7 @@ export default function Editor() {
                     <video
                       ref={videoRef}
                       src={videoUrl}
+                      preload="auto"
                       onTimeUpdate={handleTimeUpdate}
                       onLoadedMetadata={handleLoadedMetadata}
                       onError={handleVideoError}
@@ -1213,6 +1252,7 @@ export default function Editor() {
                   <video
                     ref={videoRef}
                     src={videoUrl}
+                    preload="auto"
                     onTimeUpdate={handleTimeUpdate}
                     onLoadedMetadata={handleLoadedMetadata}
                     onError={handleVideoError}
@@ -1227,6 +1267,7 @@ export default function Editor() {
                       <video
                         ref={videoRef}
                         src={videoUrl}
+                        preload="auto"
                         onTimeUpdate={handleTimeUpdate}
                         onLoadedMetadata={handleLoadedMetadata}
                         onError={handleVideoError}
@@ -1243,6 +1284,7 @@ export default function Editor() {
                     <div className="relative w-full h-1/2 overflow-hidden">
                       <video
                         src={videoUrl}
+                        preload="auto"
                         playsInline
                         muted
                         className="absolute max-w-none pointer-events-none"

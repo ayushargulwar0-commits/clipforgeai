@@ -62,6 +62,23 @@ export interface ClipItem {
 
 const INITIAL_CLIPS: ClipItem[] = [
   {
+    id: 'yt-clip-1794763864649-1',
+    title: 'The Hardest Truth About Scaling to $10M ARR (Short)',
+    description: 'Founder breaks down why initial product-market fit does not guarantee scale.',
+    hook: 'Nobody tells you this about scaling...',
+    transcript_text:
+      'The hardest truth about scaling past ten million is that everything that got you there completely breaks down.',
+    start_time: 0.0,
+    end_time: 33.0,
+    duration: 33.0,
+    aspect_ratio: '9:16',
+    score: 98,
+    score_explanation: 'Strong controversial opening hook, emotional cadence, concise resolution.',
+    status: 'rendered',
+    video_url: '/api/clips/yt-clip-1794763864649-1/stream',
+    thumbnail_url: '/storage/thumbnails/yt-clip-1794763864649-1_thumb_0.jpg',
+  },
+  {
     id: 'clip-1',
     title: 'The Hardest Truth About Scaling to $10M ARR',
     description: 'Founder breaks down why initial product-market fit does not guarantee scale.',

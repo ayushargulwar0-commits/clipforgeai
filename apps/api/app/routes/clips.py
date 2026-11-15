@@ -648,6 +648,12 @@ from app.core.database import get_sqlite_conn
 
 
 def _get_clip_record(clip_id: str, user_id: str) -> dict:
+    # Check SQLite database table clips first (fast local lookup)
+    local_clip = get_sqlite_clip(clip_id)
+    if local_clip:
+        _assert_clip_ownership(local_clip, user_id)
+        return local_clip
+
     client = get_supabase()
     try:
         resp = client.table("clips").select("*").eq("id", clip_id).single().execute()
@@ -658,12 +664,6 @@ def _get_clip_record(clip_id: str, user_id: str) -> dict:
         raise
     except Exception:
         pass
-
-    # Check SQLite database table clips
-    local_clip = get_sqlite_clip(clip_id)
-    if local_clip:
-        _assert_clip_ownership(local_clip, user_id)
-        return local_clip
 
     # Resolve disk file to verify availability
     from app.routes.youtube import _resolve_video_file_path
@@ -990,6 +990,7 @@ async def generate_stream_token(
     return {"token": token, "expires_in": 600}
 
 
+@router.head("/clips/{clip_id}/stream", summary="Stream clip video head check")
 @router.get("/clips/{clip_id}/stream", summary="Stream clip video with HTTP Range (206) support and owner check")
 async def stream_clip_video(
     clip_id: str,
