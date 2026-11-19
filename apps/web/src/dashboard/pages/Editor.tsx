@@ -303,6 +303,12 @@ const DEFAULT_EDIT_JSON: EditJson = {
 
 const SAMPLE_HORIZONTAL_VIDEO = '/sample-clip.mp4'
 
+const extractYtId = (url: string) => {
+  if (!url) return null
+  const match = url.match(/(?:v=|\/|youtu\.be\/|embed\/)([0-9A-Za-z_-]{11})/)
+  return match ? match[1] : null
+}
+
 export interface PresetClip {
   id: string
   title: string
@@ -315,6 +321,7 @@ export interface PresetClip {
   aspect_ratio: AspectRatio
   video_url: string
   thumbnail_url?: string
+  youtube_id?: string
 }
 
 export const ALL_PRESET_CLIPS: PresetClip[] = [
@@ -324,12 +331,13 @@ export const ALL_PRESET_CLIPS: PresetClip[] = [
     description: 'Founder breaks down why initial product-market fit does not guarantee scale.',
     hook: 'Nobody tells you this about scaling...',
     transcript_text: 'The hardest truth about scaling past ten million is that everything that got you there completely breaks down.',
-    start_time: 0.0,
-    end_time: 33.0,
-    duration: 33.0,
+    start_time: 142.5,
+    end_time: 178.0,
+    duration: 35.5,
     aspect_ratio: '9:16',
-    video_url: '/sample-clip.mp4',
-    thumbnail_url: '/thumbnails/yt-clip-1794763864649-1_thumb_0.jpg',
+    youtube_id: '1laZgpd69Z0',
+    video_url: 'https://www.youtube.com/watch?v=1laZgpd69Z0',
+    thumbnail_url: 'https://img.youtube.com/vi/1laZgpd69Z0/hqdefault.jpg',
   },
   {
     id: 'clip-1',
@@ -337,12 +345,13 @@ export const ALL_PRESET_CLIPS: PresetClip[] = [
     description: 'Founder breaks down why initial product-market fit does not guarantee scale.',
     hook: 'Nobody tells you this about scaling...',
     transcript_text: 'The hardest truth about scaling past ten million is that everything that got you there completely breaks down. Your first ten hires won’t be the ones who can run a thousand-person org.',
-    start_time: 0.0,
-    end_time: 35.5,
+    start_time: 142.5,
+    end_time: 178.0,
     duration: 35.5,
     aspect_ratio: '9:16',
-    video_url: '/sample-clip.mp4',
-    thumbnail_url: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=600&auto=format&fit=crop&q=80',
+    youtube_id: '1laZgpd69Z0',
+    video_url: 'https://www.youtube.com/watch?v=1laZgpd69Z0',
+    thumbnail_url: 'https://img.youtube.com/vi/1laZgpd69Z0/hqdefault.jpg',
   },
   {
     id: 'clip-2',
@@ -350,12 +359,13 @@ export const ALL_PRESET_CLIPS: PresetClip[] = [
     description: 'Engineering lead explains common microservices pitfalls for early teams.',
     hook: 'Do not build microservices on day one.',
     transcript_text: 'If you start with Kubernetes and microservices before you have ten paying customers, you are burning your runway on vanity engineering. Build a monolith until it hurts.',
-    start_time: 0.0,
-    end_time: 32.2,
+    start_time: 410.0,
+    end_time: 442.2,
     duration: 32.2,
     aspect_ratio: '9:16',
-    video_url: '/sample-clip.mp4',
-    thumbnail_url: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=600&auto=format&fit=crop&q=80',
+    youtube_id: 'dQw4w9WgXcQ',
+    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    thumbnail_url: 'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
   },
   {
     id: 'clip-3',
@@ -363,12 +373,13 @@ export const ALL_PRESET_CLIPS: PresetClip[] = [
     description: 'Growth marketer shares the 3-second retention framework.',
     hook: 'The 3-second hook framework revealed.',
     transcript_text: 'If you do not visually disrupt the feed in the first three seconds, your script does not matter. Use kinetic motion and text overlay immediately.',
-    start_time: 0.0,
-    end_time: 28.5,
+    start_time: 730.0,
+    end_time: 758.5,
     duration: 28.5,
     aspect_ratio: '9:16',
-    video_url: '/sample-clip.mp4',
-    thumbnail_url: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=600&auto=format&fit=crop&q=80',
+    youtube_id: 'jNQXAC9IVRw',
+    video_url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    thumbnail_url: 'https://img.youtube.com/vi/jNQXAC9IVRw/hqdefault.jpg',
   },
 ]
 
@@ -403,18 +414,21 @@ export default function Editor() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  const [youtubeId, setYoutubeId] = useState<string | null>(null)
+
   const handleCustomVideoUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (!file) return
       const objectUrl = URL.createObjectURL(file)
+      setYoutubeId(null)
       setVideoUrl(objectUrl)
       setVideoError(null)
       const cleanName = file.name.replace(/\.[^/.]+$/, '')
       setClipTitle(cleanName)
 
       setAvailableClips((prev) => {
-        const updated = prev.map((c) => (c.id === clipId ? { ...c, title: cleanName, video_url: objectUrl } : c))
+        const updated = prev.map((c) => (c.id === clipId ? { ...c, title: cleanName, video_url: objectUrl, youtube_id: undefined } : c))
         try {
           localStorage.setItem('cf_user_clips', JSON.stringify(updated))
         } catch (_) {}
@@ -429,11 +443,18 @@ export default function Editor() {
   const handleCustomUrlApply = useCallback(() => {
     if (!customUrlInput.trim()) return
     const newUrl = customUrlInput.trim()
-    setVideoUrl(newUrl)
+    const yt = extractYtId(newUrl)
+    if (yt) {
+      setYoutubeId(yt)
+      setVideoUrl(`https://www.youtube.com/watch?v=${yt}`)
+    } else {
+      setYoutubeId(null)
+      setVideoUrl(newUrl)
+    }
     setVideoError(null)
 
     setAvailableClips((prev) => {
-      const updated = prev.map((c) => (c.id === clipId ? { ...c, video_url: newUrl } : c))
+      const updated = prev.map((c) => (c.id === clipId ? { ...c, video_url: newUrl, youtube_id: yt || undefined } : c))
       try {
         localStorage.setItem('cf_user_clips', JSON.stringify(updated))
       } catch (_) {}
@@ -647,8 +668,13 @@ export default function Editor() {
         const title = activeClip?.title || (clipId.startsWith('yt-clip-') ? 'YouTube Viral Short' : 'My Short Clip')
         if (isMounted) setClipTitle(title)
 
+        const yId = activeClip?.youtube_id || extractYtId(activeClip?.video_url || '') || null
+        if (isMounted) setYoutubeId(yId)
+
         if (activeClip?.thumbnail_url && isMounted) {
           setThumbnails([activeClip.thumbnail_url])
+        } else if (yId && isMounted) {
+          setThumbnails([`https://img.youtube.com/vi/${yId}/hqdefault.jpg`])
         }
 
         // Set video source URL
@@ -674,6 +700,9 @@ export default function Editor() {
               videoRef.current.currentTime = parsed.trim.in
               setCurrentTime(parsed.trim.in)
             }
+            if (parsed.trim?.out !== undefined) {
+              setDuration(Math.max(1, parsed.trim.out - (parsed.trim.in || 0)))
+            }
             return
           } catch (_) {}
         }
@@ -685,6 +714,10 @@ export default function Editor() {
             ? activeClip.end_time
             : targetIn + (activeClip?.duration || 30)
         const clipAspect = (activeClip?.aspect_ratio as AspectRatio) || '9:16'
+        const clipDuration =
+          typeof activeClip?.duration === 'number' && activeClip.duration > 0
+            ? activeClip.duration
+            : Math.max(1, targetOut - targetIn)
 
         // Dynamic timed caption words from clip transcript_text or hook!
         const transcriptText =
@@ -711,6 +744,7 @@ export default function Editor() {
         }
 
         if (isMounted) {
+          setDuration(clipDuration)
           setEditJson(dynamicEdit)
           setHistory([dynamicEdit])
           setHistoryIdx(0)
@@ -1549,57 +1583,62 @@ export default function Editor() {
             {/* Video Foreground Container */}
             {!isShowingOutro && (
               <div className="absolute inset-0 z-10 overflow-hidden flex items-center justify-center">
-                {videoError && (
-                  <div className="absolute inset-0 z-30 bg-black/90 flex flex-col items-center justify-center p-6 text-center text-rose-300 space-y-3">
-                    <AlertTriangle className="w-10 h-10 text-rose-500 animate-pulse" />
-                    <div className="text-sm font-semibold text-white">Stream Playback Error</div>
-                    <div className="text-xs text-rose-400 font-mono bg-rose-950/60 p-2.5 rounded-lg border border-rose-800/50 max-w-xs break-words">
-                      {videoError}
-                    </div>
-                    <Button size="xs" variant="outline" onClick={() => window.location.reload()} className="mt-2 text-xs">
-                      Retry Stream
-                    </Button>
-                  </div>
-                )}
-
-                {editJson.framing.mode === 'crop' && (
-                  <div className="relative w-full h-full overflow-hidden">
-                    <video
-                      ref={videoRef}
-                      src={videoUrl}
-                      preload="auto"
-                      onTimeUpdate={handleTimeUpdate}
-                      onLoadedMetadata={handleLoadedMetadata}
-                      onError={handleVideoError}
-                      playsInline
-                      className="absolute max-w-none pointer-events-none"
-                      style={{
-                        width: `${(100 / editJson.framing.crop.w) * 100}%`,
-                        height: '100%',
-                        left: `-${(editJson.framing.crop.x / editJson.framing.crop.w) * 100}%`,
-                        top: '0%',
-                        objectFit: 'cover',
-                      }}
+                {youtubeId ? (
+                  <div className="relative w-full h-full overflow-hidden flex items-center justify-center bg-black">
+                    <iframe
+                      src={`https://www.youtube-nocookie.com/embed/${youtubeId}?start=${Math.floor(editJson.trim.in)}&end=${Math.ceil(editJson.trim.out)}&autoplay=1&controls=1&rel=0&modestbranding=1&enablejsapi=1`}
+                      title={clipTitle}
+                      className="w-full h-full border-none pointer-events-auto"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
                     />
                   </div>
-                )}
+                ) : (
+                  <>
+                    {videoError && (
+                      <div className="absolute inset-0 z-30 bg-black/90 flex flex-col items-center justify-center p-6 text-center text-rose-300 space-y-3">
+                        <AlertTriangle className="w-10 h-10 text-rose-500 animate-pulse" />
+                        <div className="text-sm font-semibold text-white">Video Source Notice</div>
+                        <div className="text-xs text-rose-400 font-mono bg-rose-950/60 p-2.5 rounded-lg border border-rose-800/50 max-w-xs break-words">
+                          {videoError}
+                        </div>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => {
+                            setVideoError(null)
+                            setVideoUrl('/sample-clip-9-16.mp4')
+                          }}
+                          className="mt-2 text-xs"
+                        >
+                          Use Sample Video
+                        </Button>
+                      </div>
+                    )}
 
-                {editJson.framing.mode === 'blur_fit' && (
-                  <video
-                    ref={videoRef}
-                    src={videoUrl}
-                    preload="auto"
-                    onTimeUpdate={handleTimeUpdate}
-                    onLoadedMetadata={handleLoadedMetadata}
-                    onError={handleVideoError}
-                    playsInline
-                    className="w-full object-contain pointer-events-none z-10"
-                  />
-                )}
+                    {editJson.framing.mode === 'crop' && (
+                      <div className="relative w-full h-full overflow-hidden">
+                        <video
+                          ref={videoRef}
+                          src={videoUrl}
+                          preload="auto"
+                          onTimeUpdate={handleTimeUpdate}
+                          onLoadedMetadata={handleLoadedMetadata}
+                          onError={handleVideoError}
+                          playsInline
+                          className="absolute max-w-none pointer-events-none"
+                          style={{
+                            width: `${(100 / editJson.framing.crop.w) * 100}%`,
+                            height: '100%',
+                            left: `-${(editJson.framing.crop.x / editJson.framing.crop.w) * 100}%`,
+                            top: '0%',
+                            objectFit: 'cover',
+                          }}
+                        />
+                      </div>
+                    )}
 
-                {editJson.framing.mode === 'split' && (
-                  <div className="w-full h-full flex flex-col">
-                    <div className="relative w-full h-1/2 overflow-hidden border-b border-brand-500/30">
+                    {editJson.framing.mode === 'blur_fit' && (
                       <video
                         ref={videoRef}
                         src={videoUrl}
@@ -1608,31 +1647,48 @@ export default function Editor() {
                         onLoadedMetadata={handleLoadedMetadata}
                         onError={handleVideoError}
                         playsInline
-                        className="absolute max-w-none pointer-events-none"
-                        style={{
-                          width: '100%',
-                          height: '200%',
-                          top: '0%',
-                          objectFit: 'cover',
-                        }}
+                        className="w-full object-contain pointer-events-none z-10"
                       />
-                    </div>
-                    <div className="relative w-full h-1/2 overflow-hidden">
-                      <video
-                        src={videoUrl}
-                        preload="auto"
-                        playsInline
-                        muted
-                        className="absolute max-w-none pointer-events-none"
-                        style={{
-                          width: '100%',
-                          height: '200%',
-                          top: '-100%',
-                          objectFit: 'cover',
-                        }}
-                      />
-                    </div>
-                  </div>
+                    )}
+
+                    {editJson.framing.mode === 'split' && (
+                      <div className="w-full h-full flex flex-col">
+                        <div className="relative w-full h-1/2 overflow-hidden border-b border-brand-500/30">
+                          <video
+                            ref={videoRef}
+                            src={videoUrl}
+                            preload="auto"
+                            onTimeUpdate={handleTimeUpdate}
+                            onLoadedMetadata={handleLoadedMetadata}
+                            onError={handleVideoError}
+                            playsInline
+                            className="absolute max-w-none pointer-events-none"
+                            style={{
+                              width: '100%',
+                              height: '200%',
+                              top: '0%',
+                              objectFit: 'cover',
+                            }}
+                          />
+                        </div>
+                        <div className="relative w-full h-1/2 overflow-hidden">
+                          <video
+                            src={videoUrl}
+                            preload="auto"
+                            playsInline
+                            muted
+                            className="absolute max-w-none pointer-events-none"
+                            style={{
+                              width: '100%',
+                              height: '200%',
+                              top: '-100%',
+                              objectFit: 'cover',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -1895,10 +1951,18 @@ export default function Editor() {
                     ref={sourceBoxRef}
                     className="relative w-full aspect-video rounded-lg overflow-hidden border border-slate-700 bg-slate-900 select-none cursor-ew-resize"
                   >
-                    <video
-                      src={videoUrl}
-                      className="w-full h-full object-cover opacity-60 pointer-events-none"
-                    />
+                    {youtubeId ? (
+                      <img
+                        src={`https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`}
+                        alt="Crop Source"
+                        className="w-full h-full object-cover opacity-80 pointer-events-none"
+                      />
+                    ) : (
+                      <video
+                        src={videoUrl}
+                        className="w-full h-full object-cover opacity-60 pointer-events-none"
+                      />
+                    )}
 
                     <div
                       onMouseDown={handleCropMouseDown}
@@ -2474,7 +2538,12 @@ export default function Editor() {
         <div className="relative h-12 bg-slate-900 rounded-xl border border-surface-border p-1 flex items-center overflow-hidden">
           {/* Timeline Thumbnail Strip */}
           <div className="absolute inset-0 flex overflow-hidden opacity-45 pointer-events-none select-none rounded-xl">
-            {(thumbnails.length > 0 ? thumbnails : DEFAULT_TIMELINE_THUMBNAILS).map((src, i) => (
+            {(thumbnails.length > 0
+              ? thumbnails.length === 1
+                ? Array.from({ length: 8 }, () => thumbnails[0])
+                : thumbnails
+              : DEFAULT_TIMELINE_THUMBNAILS
+            ).map((src, i) => (
               <img
                 key={i}
                 src={src}

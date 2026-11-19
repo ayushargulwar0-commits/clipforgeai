@@ -75,8 +75,9 @@ const INITIAL_CLIPS: ClipItem[] = [
     score: 98,
     score_explanation: 'Strong controversial opening hook, emotional cadence, concise resolution.',
     status: 'rendered',
-    video_url: '/sample-clip.mp4',
-    thumbnail_url: '/thumbnails/yt-clip-1794763864649-1_thumb_0.jpg',
+    youtube_id: '1laZgpd69Z0',
+    video_url: 'https://www.youtube.com/watch?v=1laZgpd69Z0',
+    thumbnail_url: 'https://img.youtube.com/vi/1laZgpd69Z0/hqdefault.jpg',
   },
   {
     id: 'clip-1',
@@ -93,8 +94,8 @@ const INITIAL_CLIPS: ClipItem[] = [
     score_explanation: 'Strong controversial opening hook, emotional cadence, concise resolution.',
     status: 'rendered',
     youtube_id: '1laZgpd69Z0',
-    video_url: '/sample-clip.mp4',
-    thumbnail_url: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=600&auto=format&fit=crop&q=80',
+    video_url: 'https://www.youtube.com/watch?v=1laZgpd69Z0',
+    thumbnail_url: 'https://img.youtube.com/vi/1laZgpd69Z0/hqdefault.jpg',
   },
   {
     id: 'clip-2',
@@ -111,8 +112,8 @@ const INITIAL_CLIPS: ClipItem[] = [
     score_explanation: 'Direct advice, punchy rhetorical challenge, high audience retention cue.',
     status: 'rendered',
     youtube_id: 'dQw4w9WgXcQ',
-    video_url: '/sample-clip.mp4',
-    thumbnail_url: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=600&auto=format&fit=crop&q=80',
+    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    thumbnail_url: 'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
   },
   {
     id: 'clip-3',
@@ -129,8 +130,8 @@ const INITIAL_CLIPS: ClipItem[] = [
     score_explanation: 'Actionable step-by-step insight, high potential for bookmarks and shares.',
     status: 'detected',
     youtube_id: 'jNQXAC9IVRw',
-    video_url: '/sample-clip.mp4',
-    thumbnail_url: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=600&auto=format&fit=crop&q=80',
+    video_url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+    thumbnail_url: 'https://img.youtube.com/vi/jNQXAC9IVRw/hqdefault.jpg',
   },
 ]
 
@@ -325,7 +326,7 @@ export default function Clips() {
         score_explanation: 'Strong opening statement, quick pacing, clear thesis.',
         status: 'detected',
         youtube_id: ytId || undefined,
-        video_url: '/sample-clip.mp4',
+        video_url: ytId ? `https://www.youtube.com/watch?v=${ytId}` : '/sample-clip.mp4',
         thumbnail_url: ytId
           ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
           : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
@@ -344,7 +345,7 @@ export default function Clips() {
         score_explanation: 'High information density and logical resolution.',
         status: 'detected',
         youtube_id: ytId || undefined,
-        video_url: '/sample-clip.mp4',
+        video_url: ytId ? `https://www.youtube.com/watch?v=${ytId}` : '/sample-clip.mp4',
         thumbnail_url: ytId
           ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
           : 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=600&auto=format&fit=crop&q=80',
@@ -363,7 +364,7 @@ export default function Clips() {
         score_explanation: 'Punchy resolution, high bookmark and share affinity.',
         status: 'detected',
         youtube_id: ytId || undefined,
-        video_url: ytId ? undefined : 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4',
+        video_url: ytId ? `https://www.youtube.com/watch?v=${ytId}` : '/sample-clip.mp4',
         thumbnail_url: ytId
           ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
           : 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=600&auto=format&fit=crop&q=80',
