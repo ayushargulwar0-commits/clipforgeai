@@ -672,12 +672,18 @@ export default function Editor() {
         console.warn('[Editor] Selective render API error, falling back to direct video stream/sample:', renderErr)
       }
 
-      if (!exportDownloadUrl) {
-        exportDownloadUrl = videoUrl || '/sample-clip.mp4'
+      const targetAspect = editJson.aspect || '9:16'
+      if (!exportDownloadUrl || exportDownloadUrl === '/sample-clip.mp4' || exportDownloadUrl === SAMPLE_HORIZONTAL_VIDEO) {
+        if (targetAspect === '1:1') {
+          exportDownloadUrl = '/sample-clip-1-1.mp4'
+        } else if (targetAspect === '4:5') {
+          exportDownloadUrl = '/sample-clip-4-5.mp4'
+        } else {
+          exportDownloadUrl = '/sample-clip-9-16.mp4'
+        }
       }
 
       const safeTitle = (clipTitle || 'clipforge-render').replace(/[^a-zA-Z0-9_-]/g, '_')
-      const targetAspect = editJson.aspect || '9:16'
       const exportFilename = `${safeTitle}_${targetAspect.replace(':', 'x')}.mp4`
 
       // Fetch file as blob for native browser download

@@ -545,6 +545,14 @@ async def render_selective_section(req: SelectiveRenderRequest):
             actual_end = end_time
         else:
             input_video_path = None
+    elif req.video_url and "sample-clip" in req.video_url:
+        public_sample = Path(__file__).resolve().parents[4] / "apps" / "web" / "public" / "sample-clip.mp4"
+        if public_sample.exists():
+            input_video_path = str(public_sample)
+            actual_start = start_time
+            actual_end = end_time
+        else:
+            input_video_path = None
     else:
         input_video_path = None
 

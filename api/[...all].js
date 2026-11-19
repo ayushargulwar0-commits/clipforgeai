@@ -40,12 +40,18 @@ module.exports = (req, res) => {
 
   // Render export endpoint
   if (url.includes('/selective-render') || url.includes('/render')) {
+    const body = req.body || {};
+    const aspect = body.aspect_ratio || '9:16';
+    let outputUrl = '/sample-clip-9-16.mp4';
+    if (aspect === '1:1') outputUrl = '/sample-clip-1-1.mp4';
+    else if (aspect === '4:5') outputUrl = '/sample-clip-4-5.mp4';
+
     return res.status(200).json({
       success: true,
-      output_url: '/sample-clip.mp4',
+      output_url: outputUrl,
       duration: 30.0,
-      aspect_ratio: '9:16',
-      filename: 'sample-clip.mp4',
+      aspect_ratio: aspect,
+      filename: outputUrl.replace('/', ''),
     });
   }
 
