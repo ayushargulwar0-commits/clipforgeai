@@ -20,6 +20,7 @@ build/
 storage/
 services/autoclip/data/
 *.mp4
+!apps/web/public/*.mp4
 *.mov
 *.wav
 *.mkv
