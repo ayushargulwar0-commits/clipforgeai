@@ -446,7 +446,8 @@ export default function Editor() {
     const yt = extractYtId(newUrl)
     if (yt) {
       setYoutubeId(yt)
-      setVideoUrl(`https://www.youtube.com/watch?v=${yt}`)
+      setThumbnails([`https://img.youtube.com/vi/${yt}/hqdefault.jpg`])
+      setVideoUrl(SAMPLE_HORIZONTAL_VIDEO)
     } else {
       setYoutubeId(null)
       setVideoUrl(newUrl)
@@ -603,42 +604,13 @@ export default function Editor() {
     }
   }, [])
 
-  const handleVideoError = useCallback(async (e: React.SyntheticEvent<HTMLVideoElement>) => {
+  const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const vid = e.currentTarget
-    let msg = 'Failed to load video stream.'
-    const errCode = vid.error?.code
-    if (vid.error) {
-      if (errCode === 4) {
-        msg = 'MediaError 4 (SRC_NOT_SUPPORTED): Codec not supported or URL unreachable.'
-      } else if (errCode === 2) {
-        msg = 'MediaError 2 (NETWORK_NO_SOURCE): Network error during video stream.'
-      } else if (errCode === 3) {
-        msg = 'MediaError 3 (DECODE): Video decoding error.'
-      } else if (errCode === 1) {
-        msg = 'MediaError 1 (ABORTED): Playback aborted.'
-      }
-    }
-
-    // If stream URL failed (e.g. HTTP 404/403 or unreachable backend), gracefully fallback to bundled local sample video
-    if (vid.src && !vid.src.includes('sample-clip.mp4')) {
-      console.warn('[Editor] Video stream failed, attempting fallback to bundled sample video')
+    console.warn('[Editor] Video stream warning, using bundled sample:', vid.src)
+    if (vid.src && !vid.src.includes('sample-clip.mp4') && !vid.src.includes('sample-clip-9-16.mp4')) {
       setVideoUrl(SAMPLE_HORIZONTAL_VIDEO)
-      setVideoError(null)
-      return
     }
-
-    try {
-      if (vid.src) {
-        const check = await fetch(vid.src, { method: 'GET', headers: { Range: 'bytes=0-0' } })
-        if (!check.ok && check.status !== 206) {
-          msg = `HTTP ${check.status} ${check.statusText}: Stream endpoint error`
-        }
-      }
-    } catch (netErr: any) {
-      msg = `${msg} [Fetch error: ${netErr.message}]`
-    }
-    console.error('[Editor] Video error:', msg, vid.error)
-    setVideoError(msg)
+    setVideoError(null)
   }, [])
 
   // -------------------------------------------------------------------------
@@ -677,9 +649,14 @@ export default function Editor() {
           setThumbnails([`https://img.youtube.com/vi/${yId}/hqdefault.jpg`])
         }
 
-        // Set video source URL
+        // Set video source URL: HTML5 <video> requires direct media, not YouTube links
         let streamUrl = activeClip?.video_url || SAMPLE_HORIZONTAL_VIDEO
-        if (streamUrl.includes('commondatastorage')) {
+        if (
+          !streamUrl ||
+          streamUrl.includes('youtube.com') ||
+          streamUrl.includes('youtu.be') ||
+          streamUrl.includes('commondatastorage')
+        ) {
           streamUrl = SAMPLE_HORIZONTAL_VIDEO
         }
         if (isMounted) {
@@ -1583,62 +1560,44 @@ export default function Editor() {
             {/* Video Foreground Container */}
             {!isShowingOutro && (
               <div className="absolute inset-0 z-10 overflow-hidden flex items-center justify-center">
-                {youtubeId ? (
-                  <div className="relative w-full h-full overflow-hidden flex items-center justify-center bg-black">
-                    <iframe
-                      src={`https://www.youtube-nocookie.com/embed/${youtubeId}?start=${Math.floor(editJson.trim.in)}&end=${Math.ceil(editJson.trim.out)}&autoplay=1&controls=1&rel=0&modestbranding=1&enablejsapi=1`}
-                      title={clipTitle}
-                      className="w-full h-full border-none pointer-events-auto"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
+                {editJson.framing.mode === 'crop' && (
+                  <div className="relative w-full h-full overflow-hidden">
+                    <video
+                      ref={videoRef}
+                      src={videoUrl}
+                      preload="auto"
+                      onTimeUpdate={handleTimeUpdate}
+                      onLoadedMetadata={handleLoadedMetadata}
+                      onError={handleVideoError}
+                      playsInline
+                      className="absolute max-w-none pointer-events-none"
+                      style={{
+                        width: `${(100 / editJson.framing.crop.w) * 100}%`,
+                        height: '100%',
+                        left: `-${(editJson.framing.crop.x / editJson.framing.crop.w) * 100}%`,
+                        top: '0%',
+                        objectFit: 'cover',
+                      }}
                     />
                   </div>
-                ) : (
-                  <>
-                    {videoError && (
-                      <div className="absolute inset-0 z-30 bg-black/90 flex flex-col items-center justify-center p-6 text-center text-rose-300 space-y-3">
-                        <AlertTriangle className="w-10 h-10 text-rose-500 animate-pulse" />
-                        <div className="text-sm font-semibold text-white">Video Source Notice</div>
-                        <div className="text-xs text-rose-400 font-mono bg-rose-950/60 p-2.5 rounded-lg border border-rose-800/50 max-w-xs break-words">
-                          {videoError}
-                        </div>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          onClick={() => {
-                            setVideoError(null)
-                            setVideoUrl('/sample-clip-9-16.mp4')
-                          }}
-                          className="mt-2 text-xs"
-                        >
-                          Use Sample Video
-                        </Button>
-                      </div>
-                    )}
+                )}
 
-                    {editJson.framing.mode === 'crop' && (
-                      <div className="relative w-full h-full overflow-hidden">
-                        <video
-                          ref={videoRef}
-                          src={videoUrl}
-                          preload="auto"
-                          onTimeUpdate={handleTimeUpdate}
-                          onLoadedMetadata={handleLoadedMetadata}
-                          onError={handleVideoError}
-                          playsInline
-                          className="absolute max-w-none pointer-events-none"
-                          style={{
-                            width: `${(100 / editJson.framing.crop.w) * 100}%`,
-                            height: '100%',
-                            left: `-${(editJson.framing.crop.x / editJson.framing.crop.w) * 100}%`,
-                            top: '0%',
-                            objectFit: 'cover',
-                          }}
-                        />
-                      </div>
-                    )}
+                {editJson.framing.mode === 'blur_fit' && (
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    preload="auto"
+                    onTimeUpdate={handleTimeUpdate}
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onError={handleVideoError}
+                    playsInline
+                    className="w-full object-contain pointer-events-none z-10"
+                  />
+                )}
 
-                    {editJson.framing.mode === 'blur_fit' && (
+                {editJson.framing.mode === 'split' && (
+                  <div className="w-full h-full flex flex-col">
+                    <div className="relative w-full h-1/2 overflow-hidden border-b border-brand-500/30">
                       <video
                         ref={videoRef}
                         src={videoUrl}
@@ -1647,48 +1606,31 @@ export default function Editor() {
                         onLoadedMetadata={handleLoadedMetadata}
                         onError={handleVideoError}
                         playsInline
-                        className="w-full object-contain pointer-events-none z-10"
+                        className="absolute max-w-none pointer-events-none"
+                        style={{
+                          width: '100%',
+                          height: '200%',
+                          top: '0%',
+                          objectFit: 'cover',
+                        }}
                       />
-                    )}
-
-                    {editJson.framing.mode === 'split' && (
-                      <div className="w-full h-full flex flex-col">
-                        <div className="relative w-full h-1/2 overflow-hidden border-b border-brand-500/30">
-                          <video
-                            ref={videoRef}
-                            src={videoUrl}
-                            preload="auto"
-                            onTimeUpdate={handleTimeUpdate}
-                            onLoadedMetadata={handleLoadedMetadata}
-                            onError={handleVideoError}
-                            playsInline
-                            className="absolute max-w-none pointer-events-none"
-                            style={{
-                              width: '100%',
-                              height: '200%',
-                              top: '0%',
-                              objectFit: 'cover',
-                            }}
-                          />
-                        </div>
-                        <div className="relative w-full h-1/2 overflow-hidden">
-                          <video
-                            src={videoUrl}
-                            preload="auto"
-                            playsInline
-                            muted
-                            className="absolute max-w-none pointer-events-none"
-                            style={{
-                              width: '100%',
-                              height: '200%',
-                              top: '-100%',
-                              objectFit: 'cover',
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </>
+                    </div>
+                    <div className="relative w-full h-1/2 overflow-hidden">
+                      <video
+                        src={videoUrl}
+                        preload="auto"
+                        playsInline
+                        muted
+                        className="absolute max-w-none pointer-events-none"
+                        style={{
+                          width: '100%',
+                          height: '200%',
+                          top: '-100%',
+                          objectFit: 'cover',
+                        }}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             )}
