@@ -121,10 +121,12 @@ module.exports = (req, res) => {
   }
 
   // Single clip lookup
-  if (url.match(/\/clips\/[^\/]+$/)) {
+  const clipMatch = url.match(/\/clips\/([^\/\?]+)/);
+  if (clipMatch && !url.includes('/edit') && !url.includes('/stream') && !url.includes('/thumbnails') && !url.includes('/render')) {
+    const cid = clipMatch[1];
     return res.status(200).json({
-      id: 'default',
-      title: 'Short Clip',
+      id: cid,
+      title: cid.startsWith('yt-clip-') ? 'YouTube Viral Short' : `Clip ${cid}`,
       duration: 33.0,
       source_url: '/sample-clip.mp4',
       status: 'rendered',

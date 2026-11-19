@@ -36,6 +36,11 @@ import {
   Check,
   Bell,
   Share2,
+  ChevronDown,
+  Film,
+  Video,
+  FileVideo,
+  ExternalLink,
 } from 'lucide-react'
 import api from '@/lib/api'
 
@@ -298,6 +303,75 @@ const DEFAULT_EDIT_JSON: EditJson = {
 
 const SAMPLE_HORIZONTAL_VIDEO = '/sample-clip.mp4'
 
+export interface PresetClip {
+  id: string
+  title: string
+  description?: string
+  hook?: string
+  transcript_text?: string
+  start_time: number
+  end_time: number
+  duration: number
+  aspect_ratio: AspectRatio
+  video_url: string
+  thumbnail_url?: string
+}
+
+export const ALL_PRESET_CLIPS: PresetClip[] = [
+  {
+    id: 'yt-clip-1794763864649-1',
+    title: 'The Hardest Truth About Scaling to $10M ARR (Short)',
+    description: 'Founder breaks down why initial product-market fit does not guarantee scale.',
+    hook: 'Nobody tells you this about scaling...',
+    transcript_text: 'The hardest truth about scaling past ten million is that everything that got you there completely breaks down.',
+    start_time: 0.0,
+    end_time: 33.0,
+    duration: 33.0,
+    aspect_ratio: '9:16',
+    video_url: '/sample-clip.mp4',
+    thumbnail_url: '/thumbnails/yt-clip-1794763864649-1_thumb_0.jpg',
+  },
+  {
+    id: 'clip-1',
+    title: 'The Hardest Truth About Scaling to $10M ARR',
+    description: 'Founder breaks down why initial product-market fit does not guarantee scale.',
+    hook: 'Nobody tells you this about scaling...',
+    transcript_text: 'The hardest truth about scaling past ten million is that everything that got you there completely breaks down. Your first ten hires won’t be the ones who can run a thousand-person org.',
+    start_time: 0.0,
+    end_time: 35.5,
+    duration: 35.5,
+    aspect_ratio: '9:16',
+    video_url: '/sample-clip.mp4',
+    thumbnail_url: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=600&auto=format&fit=crop&q=80',
+  },
+  {
+    id: 'clip-2',
+    title: 'Why 99% of Startups Pick the Wrong Tech Stack',
+    description: 'Engineering lead explains common microservices pitfalls for early teams.',
+    hook: 'Do not build microservices on day one.',
+    transcript_text: 'If you start with Kubernetes and microservices before you have ten paying customers, you are burning your runway on vanity engineering. Build a monolith until it hurts.',
+    start_time: 0.0,
+    end_time: 32.2,
+    duration: 32.2,
+    aspect_ratio: '9:16',
+    video_url: '/sample-clip.mp4',
+    thumbnail_url: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=600&auto=format&fit=crop&q=80',
+  },
+  {
+    id: 'clip-3',
+    title: 'One Rule That Boosted Our Organic TikTok Reach',
+    description: 'Growth marketer shares the 3-second retention framework.',
+    hook: 'The 3-second hook framework revealed.',
+    transcript_text: 'If you do not visually disrupt the feed in the first three seconds, your script does not matter. Use kinetic motion and text overlay immediately.',
+    start_time: 0.0,
+    end_time: 28.5,
+    duration: 28.5,
+    aspect_ratio: '9:16',
+    video_url: '/sample-clip.mp4',
+    thumbnail_url: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=600&auto=format&fit=crop&q=80',
+  },
+]
+
 const DEFAULT_TIMELINE_THUMBNAILS = Array.from(
   { length: 8 },
   (_, i) => `/thumbnails/yt-clip-1794763864649-1_thumb_${i}.jpg`
@@ -310,6 +384,65 @@ export default function Editor() {
   const { success, error: toastError } = useToast()
 
   const clipId = routeClipId || searchParams.get('clip') || 'yt-clip-1794763864649-1'
+
+  // Clip Switcher & Source Video State
+  const [availableClips, setAvailableClips] = useState<any[]>(ALL_PRESET_CLIPS)
+  const [showClipDropdown, setShowClipDropdown] = useState(false)
+  const clipDropdownRef = useRef<HTMLDivElement>(null)
+  const customVideoInputRef = useRef<HTMLInputElement>(null)
+  const [customUrlInput, setCustomUrlInput] = useState('')
+
+  // Outside click listener for clip dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (clipDropdownRef.current && !clipDropdownRef.current.contains(event.target as Node)) {
+        setShowClipDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleCustomVideoUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      const objectUrl = URL.createObjectURL(file)
+      setVideoUrl(objectUrl)
+      setVideoError(null)
+      const cleanName = file.name.replace(/\.[^/.]+$/, '')
+      setClipTitle(cleanName)
+
+      setAvailableClips((prev) => {
+        const updated = prev.map((c) => (c.id === clipId ? { ...c, title: cleanName, video_url: objectUrl } : c))
+        try {
+          localStorage.setItem('cf_user_clips', JSON.stringify(updated))
+        } catch (_) {}
+        return updated
+      })
+
+      success('Video Loaded', `Loaded "${file.name}" into editor.`)
+    },
+    [clipId, success]
+  )
+
+  const handleCustomUrlApply = useCallback(() => {
+    if (!customUrlInput.trim()) return
+    const newUrl = customUrlInput.trim()
+    setVideoUrl(newUrl)
+    setVideoError(null)
+
+    setAvailableClips((prev) => {
+      const updated = prev.map((c) => (c.id === clipId ? { ...c, video_url: newUrl } : c))
+      try {
+        localStorage.setItem('cf_user_clips', JSON.stringify(updated))
+      } catch (_) {}
+      return updated
+    })
+
+    success('Video URL Applied', 'Loaded video source.')
+    setCustomUrlInput('')
+  }, [clipId, customUrlInput, success])
 
   // If no route clipId provided, redirect to user's first clip or to My Clips
   useEffect(() => {
@@ -488,122 +621,107 @@ export default function Editor() {
   }, [])
 
   // -------------------------------------------------------------------------
-  // 1. Data Loading: GET /clips/{id}/edit & Clip Details
+  // 1. Data Loading: GET /clips/{id}/edit & Dynamic Clip Data
   // -------------------------------------------------------------------------
   useEffect(() => {
     let isMounted = true
 
     async function loadClipData() {
       try {
-        const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
-
-        // Check local user clips from localStorage first
-        let localClipItem: any = null
+        // Load all available clips combining localStorage and presets
+        let allClips: any[] = ALL_PRESET_CLIPS
         try {
           const saved = localStorage.getItem('cf_user_clips')
           if (saved) {
-            const list = JSON.parse(saved)
-            if (Array.isArray(list)) {
-              localClipItem = list.find((c: any) => c.id === clipId) || null
+            const parsed = JSON.parse(saved)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const ids = new Set(parsed.map((c: any) => c.id))
+              allClips = [...parsed, ...ALL_PRESET_CLIPS.filter((p) => !ids.has(p.id))]
             }
           }
         } catch (_) {}
 
-        if (localClipItem) {
-          if (localClipItem.title) setClipTitle(localClipItem.title)
-          if (localClipItem.thumbnail_url) {
-            setThumbnails([localClipItem.thumbnail_url])
-          }
+        if (isMounted) setAvailableClips(allClips)
+
+        const activeClip = allClips.find((c: any) => c.id === clipId) || null
+        const title = activeClip?.title || (clipId.startsWith('yt-clip-') ? 'YouTube Viral Short' : 'My Short Clip')
+        if (isMounted) setClipTitle(title)
+
+        if (activeClip?.thumbnail_url && isMounted) {
+          setThumbnails([activeClip.thumbnail_url])
         }
 
-        // 1. Fetch short-lived signed stream token
-        let streamToken: string | null = null
-        try {
-          const tokenRes = await api.post(`/clips/${clipId}/stream-token`)
-          streamToken = tokenRes?.data?.token || null
-        } catch (tokErr: any) {
-          console.warn('[Editor] Failed to get stream token:', tokErr.message)
+        // Set video source URL
+        let streamUrl = activeClip?.video_url || SAMPLE_HORIZONTAL_VIDEO
+        if (streamUrl.includes('commondatastorage')) {
+          streamUrl = SAMPLE_HORIZONTAL_VIDEO
         }
-
-        let finalStreamUrl = ''
-        if (streamToken) {
-          finalStreamUrl = `${apiBase}/clips/${clipId}/stream?token=${encodeURIComponent(streamToken)}`
-        } else if (
-          localClipItem?.video_url &&
-          !localClipItem.video_url.startsWith('/api/') &&
-          !localClipItem.video_url.includes('commondatastorage')
-        ) {
-          finalStreamUrl = localClipItem.video_url
-        } else {
-          finalStreamUrl = SAMPLE_HORIZONTAL_VIDEO
-        }
-
-        console.log('[Editor] Final video src:', finalStreamUrl)
         if (isMounted) {
-          setVideoUrl(finalStreamUrl)
+          setVideoUrl(streamUrl)
         }
 
-        // 2. Load timeline thumbnail frames (api client baseURL is already /api)
-        const thumbEndpoint = `/clips/${clipId}/thumbnails${streamToken ? `?token=${encodeURIComponent(streamToken)}` : ''}`
-        api
-          .get(thumbEndpoint)
-          .then((tRes) => {
-            if (tRes?.data?.thumbnails && isMounted) {
-              setThumbnails(tRes.data.thumbnails)
-            }
-          })
-          .catch((tErr) => {
-            console.warn('[Editor] Thumbnails fetch failed:', tErr.message)
-          })
-
-        const clipRes = await api.get(`/clips/${clipId}`).catch(() => null)
-        if (clipRes?.data && isMounted) {
-          if (clipRes.data.title) setClipTitle(clipRes.data.title)
-          if (!streamToken) {
-            if (clipRes.data.source_url) {
-              setVideoUrl(clipRes.data.source_url)
-            } else if (clipRes.data.rendered_path) {
-              setVideoUrl(`/storage/clips/${clipRes.data.rendered_path.split(/[\/\\]/).pop()}`)
-            }
-          }
-        }
-
-        const editRes = await api.get(`/clips/${clipId}/edit`)
-        if (editRes?.data?.edit_json && isMounted) {
-          const loaded: EditJson = editRes.data.edit_json
-          if (!loaded.captions.style || typeof loaded.captions.style === 'string') {
-            loaded.captions.style = STYLE_PRESETS['Firestorm Gold']
-          }
-          if (!loaded.captions.preset) {
-            loaded.captions.preset = 'Firestorm Gold'
-          }
-          if (loaded.captions.safe_zones === undefined) {
-            loaded.captions.safe_zones = true
-          }
-          if (!loaded.audio) {
-            loaded.audio = DEFAULT_EDIT_JSON.audio
-          }
-
-          setEditJson(loaded)
-          setHistory([loaded])
-          setHistoryIdx(0)
-          setHasUnsaved(false)
-          if (loaded.trim?.in !== undefined && videoRef.current) {
-            videoRef.current.currentTime = loaded.trim.in
-            setCurrentTime(loaded.trim.in)
-          }
-        }
-      } catch {
-        const localKey = `clipforge_edit_${clipId}`
-        const cached = localStorage.getItem(localKey)
+        // Check for existing custom edits in localStorage for this specific clip
+        const localEditKey = `clipforge_edit_${clipId}`
+        const cached = localStorage.getItem(localEditKey)
         if (cached && isMounted) {
           try {
             const parsed = JSON.parse(cached)
             setEditJson(parsed)
             setHistory([parsed])
             setHistoryIdx(0)
+            setHasUnsaved(false)
+            if (parsed.trim?.in !== undefined && videoRef.current) {
+              videoRef.current.currentTime = parsed.trim.in
+              setCurrentTime(parsed.trim.in)
+            }
+            return
           } catch (_) {}
         }
+
+        // Construct dynamic clip-specific Edit JSON!
+        const targetIn = typeof activeClip?.start_time === 'number' ? activeClip.start_time : 0
+        const targetOut =
+          typeof activeClip?.end_time === 'number' && activeClip.end_time > targetIn
+            ? activeClip.end_time
+            : targetIn + (activeClip?.duration || 30)
+        const clipAspect = (activeClip?.aspect_ratio as AspectRatio) || '9:16'
+
+        // Dynamic timed caption words from clip transcript_text or hook!
+        const transcriptText =
+          activeClip?.transcript_text ||
+          activeClip?.hook ||
+          'Stop scrolling right now. This secret changes everything.'
+        const wordsList = transcriptText.split(/\s+/).filter(Boolean)
+        const totalDuration = Math.max(1, targetOut - targetIn)
+        const wordStep = totalDuration / Math.max(1, wordsList.length)
+        const dynamicWords = wordsList.map((w: string, idx: number) => ({
+          text: w,
+          start: Number((targetIn + idx * wordStep).toFixed(2)),
+          end: Number((targetIn + (idx + 1) * wordStep).toFixed(2)),
+        }))
+
+        const dynamicEdit: EditJson = {
+          ...DEFAULT_EDIT_JSON,
+          trim: { in: targetIn, out: targetOut },
+          aspect: clipAspect,
+          captions: {
+            ...DEFAULT_EDIT_JSON.captions,
+            words: dynamicWords,
+          },
+        }
+
+        if (isMounted) {
+          setEditJson(dynamicEdit)
+          setHistory([dynamicEdit])
+          setHistoryIdx(0)
+          setHasUnsaved(false)
+          if (videoRef.current) {
+            videoRef.current.currentTime = targetIn
+            setCurrentTime(targetIn)
+          }
+        }
+      } catch (err: any) {
+        console.warn('[Editor] Failed to load clip data:', err.message)
       }
     }
 
@@ -1217,9 +1335,88 @@ export default function Editor() {
             <ArrowLeft size={16} /> My Clips
           </Button>
           <div className="h-4 w-px bg-slate-800" />
-          <div>
-            <h1 className="text-sm font-bold text-white truncate max-w-xs">{clipTitle}</h1>
-            <p className="text-[11px] text-slate-400">ID: {clipId}</p>
+          {/* Interactive Clip Switcher Dropdown */}
+          <div className="relative" ref={clipDropdownRef}>
+            <button
+              onClick={() => setShowClipDropdown((v) => !v)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-surface-border hover:border-brand-500/50 hover:bg-slate-800 transition text-left"
+            >
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span className="truncate max-w-[180px] sm:max-w-[260px]">{clipTitle}</span>
+                  <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                </div>
+                <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
+                  <span className="truncate max-w-[110px]">ID: {clipId}</span>
+                  <span>·</span>
+                  <span className="text-brand-400 font-bold">{editJson.aspect}</span>
+                </div>
+              </div>
+            </button>
+
+            {showClipDropdown && (
+              <div className="absolute left-0 top-full mt-2 w-80 rounded-xl bg-slate-900 border border-surface-border shadow-2xl p-2 z-50 space-y-1 max-h-96 overflow-y-auto">
+                <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                  <span>Switch Reel ({availableClips.length})</span>
+                  <button
+                    onClick={() => {
+                      setShowClipDropdown(false)
+                      navigate('/dashboard/clips')
+                    }}
+                    className="text-brand-400 hover:text-brand-300 font-semibold lowercase"
+                  >
+                    all clips
+                  </button>
+                </div>
+
+                {availableClips.map((c) => {
+                  const isCurrent = c.id === clipId
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        setShowClipDropdown(false)
+                        navigate(`/dashboard/editor/${c.id}`)
+                      }}
+                      className={`w-full flex items-center gap-3 p-2 rounded-lg text-left transition ${
+                        isCurrent
+                          ? 'bg-brand-500/20 border border-brand-500/40 text-white'
+                          : 'hover:bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded bg-slate-800 border border-surface-border shrink-0 overflow-hidden flex items-center justify-center">
+                        {c.thumbnail_url ? (
+                          <img src={c.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <Film size={16} className="text-slate-500" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-semibold truncate text-white">{c.title || 'Untitled Clip'}</div>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                          <span>{c.duration ? `${c.duration}s` : '30s'}</span>
+                          <span>·</span>
+                          <span className="font-mono truncate max-w-[110px]">{c.id}</span>
+                        </div>
+                      </div>
+                      {isCurrent && <Check size={14} className="text-brand-400 shrink-0" />}
+                    </button>
+                  )
+                })}
+
+                <div className="pt-2 border-t border-slate-800">
+                  <button
+                    onClick={() => {
+                      setShowClipDropdown(false)
+                      navigate('/dashboard/clips')
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-brand-600/20 hover:bg-brand-600/30 text-brand-300 text-xs font-semibold transition"
+                  >
+                    <Plus size={13} /> Detect & Generate New Reel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1928,6 +2125,56 @@ export default function Editor() {
           {/* TAB 4: Media, Watermark & Outro (Phase 6C) */}
           {activeTab === 'media' && (
             <div className="p-5 space-y-6 overflow-y-auto flex-1 text-xs">
+              {/* SOURCE VIDEO & REEL MEDIA */}
+              <div className="space-y-3 p-3.5 rounded-xl bg-slate-900 border border-surface-border">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                    <FileVideo size={13} className="text-brand-400" /> Source Video File
+                  </span>
+                  <input
+                    type="file"
+                    ref={customVideoInputRef}
+                    accept="video/mp4,video/quicktime,video/webm"
+                    onChange={handleCustomVideoUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => customVideoInputRef.current?.click()}
+                    className="gap-1 text-[10px]"
+                  >
+                    <Upload size={10} /> Upload MP4
+                  </Button>
+                </div>
+
+                <div className="text-[11px] text-slate-300 truncate bg-slate-950 p-2 rounded-lg border border-surface-border font-mono flex items-center justify-between">
+                  <span className="truncate">
+                    {videoUrl.startsWith('blob:') ? '📁 Uploaded Custom Video' : videoUrl.split('/').pop() || videoUrl}
+                  </span>
+                  <Badge variant="brand" className="text-[9px] shrink-0">
+                    Active
+                  </Badge>
+                </div>
+
+                {/* Paste URL */}
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-semibold block">Or Load Video URL / Stream:</label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={customUrlInput}
+                      onChange={(e) => setCustomUrlInput(e.target.value)}
+                      placeholder="Paste MP4 URL or YouTube Link..."
+                      className="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-surface-border text-white text-[11px] placeholder:text-slate-500 focus:outline-none focus:border-brand-500"
+                    />
+                    <Button size="xs" onClick={handleCustomUrlApply} disabled={!customUrlInput.trim()}>
+                      Load
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               {/* WATERMARK PANEL */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
