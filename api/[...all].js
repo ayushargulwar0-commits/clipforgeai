@@ -31,9 +31,9 @@ module.exports = (req, res) => {
     });
   }
 
-  // Video streaming endpoint: redirect to working sample MP4
+  // Video streaming endpoint: redirect to working bundled sample MP4
   if (url.includes('/stream')) {
-    return res.redirect(302, 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
+    return res.redirect(302, '/sample-clip.mp4');
   }
 
   // Clip edit state endpoint

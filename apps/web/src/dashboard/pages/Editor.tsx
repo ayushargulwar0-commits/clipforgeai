@@ -296,8 +296,12 @@ const DEFAULT_EDIT_JSON: EditJson = {
   },
 }
 
-const SAMPLE_HORIZONTAL_VIDEO =
-  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'
+const SAMPLE_HORIZONTAL_VIDEO = '/sample-clip.mp4'
+
+const DEFAULT_TIMELINE_THUMBNAILS = Array.from(
+  { length: 8 },
+  (_, i) => `/thumbnails/yt-clip-1794763864649-1_thumb_${i}.jpg`
+)
 
 export default function Editor() {
   const { clipId: routeClipId } = useParams<{ clipId?: string }>()
@@ -454,9 +458,9 @@ export default function Editor() {
       }
     }
 
-    // If stream URL failed (e.g. HTTP 404 or unreachable backend), gracefully fallback to sample video
-    if (vid.src && !vid.src.includes('sample/ForBiggerBlazes')) {
-      console.warn('[Editor] Video stream failed, attempting fallback to horizontal sample video')
+    // If stream URL failed (e.g. HTTP 404/403 or unreachable backend), gracefully fallback to bundled local sample video
+    if (vid.src && !vid.src.includes('sample-clip.mp4')) {
+      console.warn('[Editor] Video stream failed, attempting fallback to bundled sample video')
       setVideoUrl(SAMPLE_HORIZONTAL_VIDEO)
       setVideoError(null)
       return
@@ -517,10 +521,14 @@ export default function Editor() {
         let finalStreamUrl = ''
         if (streamToken) {
           finalStreamUrl = `${apiBase}/clips/${clipId}/stream?token=${encodeURIComponent(streamToken)}`
-        } else if (localClipItem?.video_url && !localClipItem.video_url.startsWith('/api/')) {
+        } else if (
+          localClipItem?.video_url &&
+          !localClipItem.video_url.startsWith('/api/') &&
+          !localClipItem.video_url.includes('commondatastorage')
+        ) {
           finalStreamUrl = localClipItem.video_url
         } else {
-          finalStreamUrl = `${apiBase}/clips/${clipId}/stream`
+          finalStreamUrl = SAMPLE_HORIZONTAL_VIDEO
         }
 
         console.log('[Editor] Final video src:', finalStreamUrl)
@@ -2121,20 +2129,17 @@ export default function Editor() {
         <div className="relative h-12 bg-slate-900 rounded-xl border border-surface-border p-1 flex items-center overflow-hidden">
           {/* Timeline Thumbnail Strip */}
           <div className="absolute inset-0 flex overflow-hidden opacity-45 pointer-events-none select-none rounded-xl">
-            {thumbnails.length > 0 ? (
-              thumbnails.map((src, i) => (
-                <img
-                  key={i}
-                  src={src}
-                  alt={`Frame ${i}`}
-                  className="flex-1 h-full object-cover border-r border-black/30"
-                />
-              ))
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500 font-mono">
-                {videoError ? 'Video Unavailable' : 'Generating timeline frames...'}
-              </div>
-            )}
+            {(thumbnails.length > 0 ? thumbnails : DEFAULT_TIMELINE_THUMBNAILS).map((src, i) => (
+              <img
+                key={i}
+                src={src}
+                alt={`Frame ${i}`}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+                className="flex-1 h-full object-cover border-r border-black/30"
+              />
+            ))}
           </div>
 
           {/* Clip Range */}

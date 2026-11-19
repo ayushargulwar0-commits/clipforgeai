@@ -124,7 +124,7 @@ export function VideoUploader({ onUploadComplete, projectId }: VideoUploaderProp
           score_explanation: 'Strong opening hook and fast pacing.',
           status: 'detected',
           youtube_id: ytId || undefined,
-          video_url: ytId ? undefined : 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+          video_url: '/sample-clip.mp4',
           thumbnail_url: ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : undefined,
         },
         {
@@ -141,7 +141,7 @@ export function VideoUploader({ onUploadComplete, projectId }: VideoUploaderProp
           score_explanation: 'Actionable insight structure.',
           status: 'detected',
           youtube_id: ytId || undefined,
-          video_url: ytId ? undefined : 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          video_url: '/sample-clip.mp4',
           thumbnail_url: ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : undefined,
         },
       ]
