@@ -453,6 +453,15 @@ export default function Editor() {
         msg = 'MediaError 1 (ABORTED): Playback aborted.'
       }
     }
+
+    // If stream URL failed (e.g. HTTP 404 or unreachable backend), gracefully fallback to sample video
+    if (vid.src && !vid.src.includes('sample/ForBiggerBlazes')) {
+      console.warn('[Editor] Video stream failed, attempting fallback to horizontal sample video')
+      setVideoUrl(SAMPLE_HORIZONTAL_VIDEO)
+      setVideoError(null)
+      return
+    }
+
     try {
       if (vid.src) {
         const check = await fetch(vid.src, { method: 'GET', headers: { Range: 'bytes=0-0' } })
@@ -477,6 +486,25 @@ export default function Editor() {
       try {
         const apiBase = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
 
+        // Check local user clips from localStorage first
+        let localClipItem: any = null
+        try {
+          const saved = localStorage.getItem('cf_user_clips')
+          if (saved) {
+            const list = JSON.parse(saved)
+            if (Array.isArray(list)) {
+              localClipItem = list.find((c: any) => c.id === clipId) || null
+            }
+          }
+        } catch (_) {}
+
+        if (localClipItem) {
+          if (localClipItem.title) setClipTitle(localClipItem.title)
+          if (localClipItem.thumbnail_url) {
+            setThumbnails([localClipItem.thumbnail_url])
+          }
+        }
+
         // 1. Fetch short-lived signed stream token
         let streamToken: string | null = null
         try {
@@ -486,9 +514,14 @@ export default function Editor() {
           console.warn('[Editor] Failed to get stream token:', tokErr.message)
         }
 
-        const finalStreamUrl = streamToken
-          ? `${apiBase}/clips/${clipId}/stream?token=${encodeURIComponent(streamToken)}`
-          : `${apiBase}/clips/${clipId}/stream`
+        let finalStreamUrl = ''
+        if (streamToken) {
+          finalStreamUrl = `${apiBase}/clips/${clipId}/stream?token=${encodeURIComponent(streamToken)}`
+        } else if (localClipItem?.video_url && !localClipItem.video_url.startsWith('/api/')) {
+          finalStreamUrl = localClipItem.video_url
+        } else {
+          finalStreamUrl = `${apiBase}/clips/${clipId}/stream`
+        }
 
         console.log('[Editor] Final video src:', finalStreamUrl)
         if (isMounted) {

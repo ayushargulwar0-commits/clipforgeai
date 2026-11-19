@@ -4,12 +4,16 @@
   "cleanUrls": true,
   "rewrites": [
     {
+      "source": "/api/youtube/:path*",
+      "destination": "/api/youtube/:path*"
+    },
+    {
       "source": "/api/:match*",
-      "destination": "/api/:match*"
+      "destination": "/api/[...all].js"
     },
     {
       "source": "/storage/:match*",
-      "destination": "/storage/:match*"
+      "destination": "/api/[...all].js"
     },
     {
       "source": "/(.*)",
