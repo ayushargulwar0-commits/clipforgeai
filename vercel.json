@@ -4,6 +4,18 @@
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
+      "source": "/api/youtube/:path*",
+      "destination": "/api/youtube/:path*"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/storage/(.*)",
+      "destination": "/api"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

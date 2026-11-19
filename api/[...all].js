@@ -1,7 +1,7 @@
 module.exports = (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS,DELETE,PUT,PATCH');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range, X-User-Email, X-User-Role');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
 
   if (req.method === 'OPTIONS') {
@@ -18,20 +18,22 @@ module.exports = (req, res) => {
     });
   }
 
+  // Assets list endpoint
+  if (url.includes('/assets')) {
+    return res.status(200).json([]);
+  }
+
   // Thumbnails endpoint
   if (url.includes('/thumbnails')) {
+    const thumbs = Array.from({ length: 8 }, (_, i) => `/thumbnails/yt-clip-1794763864649-1_thumb_${i}.jpg`);
     return res.status(200).json({
-      thumbnails: [
-        'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=600&auto=format&fit=crop&q=80',
-        'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-      ],
+      thumbnails: thumbs,
       cached: true,
-      count: 3,
+      count: 8,
     });
   }
 
-  // Video streaming endpoint: redirect to working bundled sample MP4
+  // Video streaming endpoint: redirect to bundled sample MP4
   if (url.includes('/stream')) {
     return res.redirect(302, '/sample-clip.mp4');
   }
@@ -41,7 +43,7 @@ module.exports = (req, res) => {
     if (req.method === 'PUT') {
       return res.status(200).json({
         success: true,
-        message: 'Saved in cloud preview',
+        message: 'Saved in preview',
       });
     }
     return res.status(200).json({
@@ -98,6 +100,17 @@ module.exports = (req, res) => {
           text_color: '#FFFFFF',
         },
       },
+    });
+  }
+
+  // Single clip lookup
+  if (url.match(/\/clips\/[^\/]+$/)) {
+    return res.status(200).json({
+      id: 'default',
+      title: 'Short Clip',
+      duration: 33.0,
+      source_url: '/sample-clip.mp4',
+      status: 'rendered',
     });
   }
 

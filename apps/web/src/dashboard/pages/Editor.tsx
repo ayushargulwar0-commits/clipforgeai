@@ -415,8 +415,14 @@ export default function Editor() {
   const fetchUserAssets = useCallback(async () => {
     try {
       const res = await api.get('/assets')
-      if (res.data) setUserAssets(res.data)
-    } catch (_) {}
+      if (Array.isArray(res.data)) {
+        setUserAssets(res.data)
+      } else {
+        setUserAssets([])
+      }
+    } catch (_) {
+      setUserAssets([])
+    }
   }, [])
 
   useEffect(() => {
@@ -648,10 +654,12 @@ export default function Editor() {
   // 4. Video Time Update & Synchronized Music Audio
   // -------------------------------------------------------------------------
   const selectedMusicAsset = useMemo(() => {
+    if (!Array.isArray(userAssets)) return undefined
     return userAssets.find((a) => a.id === editJson.audio?.music?.asset_id)
   }, [userAssets, editJson.audio?.music?.asset_id])
 
   const selectedWatermarkAsset = useMemo(() => {
+    if (!Array.isArray(userAssets)) return undefined
     return userAssets.find((a) => a.id === editJson.watermark?.asset_id)
   }, [userAssets, editJson.watermark?.asset_id])
 
@@ -1730,7 +1738,7 @@ export default function Editor() {
                   className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-surface-border text-white text-xs"
                 >
                   <option value="">No Background Music</option>
-                  {userAssets
+                  {(Array.isArray(userAssets) ? userAssets : [])
                     .filter((a) => a.asset_type === 'audio')
                     .map((a) => (
                       <option key={a.id} value={a.id}>
@@ -1867,7 +1875,7 @@ export default function Editor() {
                   className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-surface-border text-white text-xs"
                 >
                   <option value="">No Watermark</option>
-                  {userAssets
+                  {(Array.isArray(userAssets) ? userAssets : [])
                     .filter((a) => a.asset_type === 'image')
                     .map((a) => (
                       <option key={a.id} value={a.id}>
