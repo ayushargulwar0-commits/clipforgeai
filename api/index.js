@@ -38,6 +38,17 @@ module.exports = (req, res) => {
     return res.redirect(302, '/sample-clip.mp4');
   }
 
+  // Render export endpoint
+  if (url.includes('/selective-render') || url.includes('/render')) {
+    return res.status(200).json({
+      success: true,
+      output_url: '/sample-clip.mp4',
+      duration: 30.0,
+      aspect_ratio: '9:16',
+      filename: 'sample-clip.mp4',
+    });
+  }
+
   // Clip edit state endpoint
   if (url.includes('/edit')) {
     if (req.method === 'PUT') {

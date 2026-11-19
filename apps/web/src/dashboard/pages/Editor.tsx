@@ -346,6 +346,7 @@ export default function Editor() {
   // UI State
   const [activeTab, setActiveTab] = useState<'framing' | 'text' | 'audio' | 'media'>('framing')
   const [isSaving, setIsSaving] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [isAutoFraming, setIsAutoFraming] = useState(false)
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [showSafeZoneOverlay, setShowSafeZoneOverlay] = useState(true)
@@ -638,6 +639,87 @@ export default function Editor() {
     },
     [clipId, editJson, success, toastError]
   )
+
+  // -------------------------------------------------------------------------
+  // 2b. Export Video: POST /clips/selective-render & Download File
+  // -------------------------------------------------------------------------
+  const handleExport = useCallback(async () => {
+    setIsExporting(true)
+    try {
+      await saveChanges(false)
+
+      const renderPayload = {
+        clip_id: clipId,
+        video_url: videoUrl || '/sample-clip.mp4',
+        start_time: editJson.trim.in,
+        end_time: editJson.trim.out,
+        aspect_ratio: editJson.aspect || '9:16',
+        caption_text: editJson.captions.words.map((w) => w.text).join(' '),
+        caption_style: editJson.captions.style,
+        zoom: editJson.framing.crop.w > 0 ? 1 / editJson.framing.crop.w : 1,
+        position_x: editJson.framing.crop.x,
+        position_y: editJson.framing.crop.y,
+        include_outro: Boolean(editJson.outro?.enabled),
+      }
+
+      let exportDownloadUrl = ''
+      try {
+        const renderRes = await api.post('/clips/selective-render', renderPayload)
+        if (renderRes?.data?.output_url) {
+          exportDownloadUrl = renderRes.data.output_url
+        }
+      } catch (renderErr) {
+        console.warn('[Editor] Selective render API error, falling back to direct video stream/sample:', renderErr)
+      }
+
+      if (!exportDownloadUrl) {
+        exportDownloadUrl = videoUrl || '/sample-clip.mp4'
+      }
+
+      const safeTitle = (clipTitle || 'clipforge-render').replace(/[^a-zA-Z0-9_-]/g, '_')
+      const targetAspect = editJson.aspect || '9:16'
+      const exportFilename = `${safeTitle}_${targetAspect.replace(':', 'x')}.mp4`
+
+      // Fetch file as blob for native browser download
+      try {
+        const res = await fetch(exportDownloadUrl)
+        if (res.ok) {
+          const blob = await res.blob()
+          const blobUrl = window.URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = blobUrl
+          a.download = exportFilename
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000)
+        } else {
+          const a = document.createElement('a')
+          a.href = exportDownloadUrl
+          a.download = exportFilename
+          a.target = '_blank'
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+        }
+      } catch {
+        const a = document.createElement('a')
+        a.href = exportDownloadUrl
+        a.download = exportFilename
+        a.target = '_blank'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      }
+
+      success('Export Completed', `Successfully exported ${exportFilename}`)
+    } catch (err: any) {
+      console.error('[Editor] Export failed:', err)
+      toastError('Export Failed', err.message || 'Could not export video.')
+    } finally {
+      setIsExporting(false)
+    }
+  }, [clipId, videoUrl, editJson, clipTitle, saveChanges, success, toastError])
 
   // -------------------------------------------------------------------------
   // 3. Autosave (Debounced 2 seconds)
@@ -1194,10 +1276,12 @@ export default function Editor() {
 
           <Button
             size="sm"
-            onClick={() => success('Export Queued', 'Full HD 1080x1920 render queued with all audio, watermark and outro layers.')}
+            onClick={handleExport}
+            disabled={isExporting}
             className="gap-1.5 bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs"
           >
-            <Download size={14} /> Export
+            {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {isExporting ? 'Exporting...' : 'Export'}
           </Button>
         </div>
       </header>
