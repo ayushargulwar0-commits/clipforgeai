@@ -1,4 +1,4 @@
-module.exports = (req, res) => {
+export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS,DELETE,PUT,PATCH');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range, X-User-Email, X-User-Role');
@@ -10,20 +10,104 @@ module.exports = (req, res) => {
 
   const url = req.url || '';
 
-  // Stream token endpoint
+  // 1. YouTube & URL Video Ingestion Endpoint
+  if (url.includes('/upload/url')) {
+    const body = req.body || {};
+    const videoUrl = body.url || '';
+    let ytId = null;
+    const match = videoUrl.match(/(?:v=|\/|youtu\.be\/)([0-9A-Za-z_-]{11})/);
+    if (match) ytId = match[1];
+
+    const timestamp = Date.now();
+    const clipId = ytId ? `yt-clip-${timestamp}-1` : `clip-${timestamp}-1`;
+    const videoId = ytId ? `yt-vid-${timestamp}` : `vid-${timestamp}`;
+    const title = ytId ? `YouTube Video (${ytId})` : (body.title || 'Imported Video');
+
+    return res.status(201).json({
+      success: true,
+      job_id: `job-${timestamp}`,
+      video_id: videoId,
+      filename: title,
+      title: title,
+      duration: 33.0,
+      width: 1920,
+      height: 1080,
+      file_size: 24500000,
+      status: 'ready',
+      youtube_id: ytId,
+      clips: [
+        {
+          id: clipId,
+          title: `Viral Highlight: ${title}`,
+          duration: 30.0,
+          aspect_ratio: '9:16',
+          status: 'ready',
+          youtube_id: ytId,
+          video_url: videoUrl,
+        }
+      ],
+      message: 'Source ingested and clips generated successfully.',
+    });
+  }
+
+  // 2. Direct Video File Upload
+  if (url.includes('/upload/video') || url.includes('/upload')) {
+    const timestamp = Date.now();
+    const videoId = `vid-${timestamp}`;
+    return res.status(201).json({
+      success: true,
+      video_id: videoId,
+      filename: 'Uploaded Footage.mp4',
+      title: 'Uploaded Footage',
+      duration: 45.0,
+      width: 1920,
+      height: 1080,
+      file_size: 15400000,
+      status: 'ready',
+      clips: [
+        {
+          id: `clip-${timestamp}-1`,
+          title: 'Highlight Clip 1',
+          duration: 30.0,
+          aspect_ratio: '9:16',
+          status: 'ready',
+        }
+      ],
+      message: 'Video uploaded and processed successfully.',
+    });
+  }
+
+  // 3. Stream token endpoint
   if (url.includes('/stream-token')) {
     return res.status(200).json({
-      token: 'vercel_preview_token',
+      token: 'vercel_preview_token_' + Date.now(),
       expires_in: 600,
     });
   }
 
-  // Assets list endpoint
+  // 4. Clips listing endpoint (GET /api/clips)
+  if (url === '/clips' || url === '/clips/' || url.endsWith('/api/clips') || url.endsWith('/api/clips/')) {
+    return res.status(200).json([
+      {
+        id: 'yt-clip-default-1',
+        title: 'Billionaire Brain Secrets — Viral Short',
+        duration: 30.0,
+        aspect_ratio: '9:16',
+        status: 'ready',
+        youtube_id: 'Rni7Fz7208c',
+        video_url: 'https://youtu.be/Rni7Fz7208c',
+        file_path: 'storage/clips/sample-clip-9-16.mp4',
+        created_at: new Date().toISOString(),
+      }
+    ]);
+  }
+
+  // 5. Assets list endpoint
   if (url.includes('/assets')) {
     return res.status(200).json([]);
   }
 
-  // Thumbnails endpoint
+  // 6. Thumbnails endpoint
   if (url.includes('/thumbnails')) {
     const thumbs = Array.from({ length: 8 }, (_, i) => `/thumbnails/yt-clip-1794763864649-1_thumb_${i}.jpg`);
     return res.status(200).json({
@@ -33,12 +117,31 @@ module.exports = (req, res) => {
     });
   }
 
-  // Video streaming endpoint: redirect to bundled sample MP4
+  // 7. Video streaming endpoint
   if (url.includes('/stream')) {
-    return res.redirect(302, '/sample-clip.mp4');
+    return res.redirect(302, '/sample-clip-9-16.mp4');
   }
 
-  // Render export endpoint
+  // 8. Render / Export endpoints
+  if (url.includes('/export')) {
+    const jobId = 'job-' + Date.now();
+    return res.status(200).json({
+      job_id: jobId,
+      status: 'rendering',
+      progress: 10,
+      message: 'Export render started',
+    });
+  }
+
+  if (url.includes('/exports/')) {
+    return res.status(200).json({
+      status: 'completed',
+      progress: 100,
+      download_url: '/sample-clip-9-16.mp4',
+      shorts_path: 'storage/exports/sample.mp4',
+    });
+  }
+
   if (url.includes('/selective-render') || url.includes('/render')) {
     const body = req.body || {};
     const aspect = body.aspect_ratio || '9:16';
@@ -55,7 +158,16 @@ module.exports = (req, res) => {
     });
   }
 
-  // Clip edit state endpoint
+  // 9. Clip status endpoint
+  if (url.includes('/status')) {
+    return res.status(200).json({
+      status: 'ready',
+      progress: 100,
+      duration: 30.0,
+    });
+  }
+
+  // 10. Clip edit state endpoint
   if (url.includes('/edit')) {
     if (req.method === 'PUT') {
       return res.status(200).json({
@@ -120,16 +232,16 @@ module.exports = (req, res) => {
     });
   }
 
-  // Single clip lookup
+  // 11. Single clip lookup
   const clipMatch = url.match(/\/clips\/([^\/\?]+)/);
   if (clipMatch && !url.includes('/edit') && !url.includes('/stream') && !url.includes('/thumbnails') && !url.includes('/render')) {
     const cid = clipMatch[1];
     return res.status(200).json({
       id: cid,
       title: cid.startsWith('yt-clip-') ? 'YouTube Viral Short' : `Clip ${cid}`,
-      duration: 33.0,
-      source_url: '/sample-clip.mp4',
-      status: 'rendered',
+      duration: 30.0,
+      source_url: '/sample-clip-9-16.mp4',
+      status: 'ready',
     });
   }
 
@@ -138,4 +250,4 @@ module.exports = (req, res) => {
     endpoint: url,
     message: 'ClipForge API active',
   });
-};
+}
