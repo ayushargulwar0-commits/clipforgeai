@@ -241,11 +241,27 @@ export function YouTubeConnectModal({ open, onClose, onSuccess }: YouTubeConnect
               </ul>
             </div>
 
-            <div className="text-[11px] text-slate-500 flex items-start gap-1.5 leading-relaxed">
-              <Lock size={12} className="shrink-0 mt-0.5 text-slate-400" />
-              <span>
-                ClipForge AI will only upload videos that you explicitly approve. You can revoke access at any time from your Google Account security settings.
-              </span>
+            <div className="text-[11px] text-slate-400 space-y-1.5 leading-relaxed bg-surface/50 p-2.5 rounded-lg border border-surface-border">
+              <div className="flex items-start gap-1.5">
+                <Lock size={12} className="shrink-0 mt-0.5 text-slate-400" />
+                <span>
+                  ClipForge AI will only upload videos that you explicitly approve. You can revoke access at any time from your{' '}
+                  <a
+                    href="https://security.google.com/settings/security/permissions"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-brand-400 underline"
+                  >
+                    Google Account security settings
+                  </a>.
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                By connecting, you agree to our{' '}
+                <a href="/terms" target="_blank" className="text-brand-400 underline">Terms of Service</a>,{' '}
+                <a href="/privacy" target="_blank" className="text-brand-400 underline">Privacy Policy</a>, and the{' '}
+                <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener noreferrer" className="text-brand-400 underline">YouTube Terms of Service</a>.
+              </p>
             </div>
 
             {/* BUTTONS */}

@@ -3,42 +3,42 @@ import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Link } from 'react-router-dom'
-import { ShieldCheck, HeartHandshake, Zap, Sparkles, Terminal } from 'lucide-react'
+import { Scissors, ShieldCheck, Zap, Layers, Sparkles } from 'lucide-react'
 
 export default function About() {
   return (
     <PublicLayout>
-      <div className="py-16 md:py-24 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center max-w-3xl mx-auto mb-20">
-          <Badge variant="brand" className="mb-3">Our Mission</Badge>
+      <div className="py-16 md:py-24 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center max-w-3xl mx-auto mb-16">
+          <Badge variant="brand" className="mb-3">About ClipForge AI</Badge>
           <h1 className="text-4xl sm:text-6xl font-extrabold text-white tracking-tight mb-4">
-            Democratizing <span className="gradient-text">Video Repurposing</span>
+            Honest Video Repurposing for <span className="gradient-text">Creators</span>
           </h1>
           <p className="text-slate-400 text-lg leading-relaxed">
-            We believe creators, educators, and indie founders shouldn&rsquo;t need a massive post-production team or expensive closed AI subscriptions to turn long recordings into engaging short clips.
+            ClipForge AI is an open-source powered software platform built to transform long-form recordings into clean, vertical short videos.
           </p>
         </div>
 
-        {/* Story */}
+        {/* Short, honest product overview */}
         <div className="p-8 md:p-12 rounded-3xl bg-surface-card border border-surface-border mb-16 space-y-6 text-sm text-slate-300 leading-relaxed">
-          <h2 className="text-2xl font-bold text-white">Why We Built ClipForge AI</h2>
+          <h2 className="text-2xl font-bold text-white">What We Do</h2>
           <p>
-            Short-form video has become the single most effective channel for creator discovery and business growth. Yet, the process of finding the right 30 seconds inside an hour-long recording, cutting dead air, reframing horizontal shots for vertical screens, and syncing subtitles is tedious and repetitive.
+            Producing short-form videos for YouTube Shorts, Instagram Reels, and TikTok usually demands hours of scrubbing through footage, finding punchy soundbites, cropping 16:9 shots to 9:16 vertical orientation, and manually transcribing subtitles.
           </p>
           <p>
-            Many commercial platforms charge steep monthly fees and rely on closed-source APIs that sell your footage to third parties. We set out to build an original, production-grade alternative based on the finest open-source machine learning and media processing tools: faster-whisper, OpenCV, and FFmpeg.
+            ClipForge AI streamlines this workflow into a simple pipeline. By combining faster-whisper speech recognition, NLP highlight detection, and FFmpeg media rendering, ClipForge AI extracts hook segments, reframes them for vertical displays, burns kinetic captions (with full Hindi Devanagari font support), and lets creators preview and tweak edits in an interactive in-browser editor before publishing.
           </p>
         </div>
 
-        {/* Values */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+        {/* Core Principles */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
           <Card className="p-6 space-y-3">
             <div className="w-12 h-12 rounded-xl bg-brand-600/20 text-brand-400 flex items-center justify-center">
               <Zap size={22} />
             </div>
-            <h3 className="text-lg font-bold text-white">Open Source First</h3>
+            <h3 className="text-lg font-bold text-white">Open Technology Stack</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              We stand on the shoulders of giants. Every AI model and rendering algorithm can run locally on standard hardware without vendor lock-in.
+              Built on reliable open-source components: faster-whisper for speech transcription, PySceneDetect for cut detection, and FFmpeg for crisp 1080x1920 exports.
             </p>
           </Card>
 
@@ -46,43 +46,28 @@ export default function About() {
             <div className="w-12 h-12 rounded-xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center">
               <ShieldCheck size={22} />
             </div>
-            <h3 className="text-lg font-bold text-white">Zero Compromise on Privacy</h3>
+            <h3 className="text-lg font-bold text-white">Creator Privacy First</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Your source videos and transcripts remain completely private. We never sell your media or use user videos for public model training.
+              You own 100% of your source footage and generated clips. We never sell your media or use user videos to train third-party machine learning models.
             </p>
           </Card>
 
           <Card className="p-6 space-y-3">
             <div className="w-12 h-12 rounded-xl bg-accent-600/20 text-accent-400 flex items-center justify-center">
-              <HeartHandshake size={22} />
+              <Layers size={22} />
             </div>
-            <h3 className="text-lg font-bold text-white">Fair Pricing for All</h3>
+            <h3 className="text-lg font-bold text-white">Transparent &amp; Accessible</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Our free starter tier remains forever free with real exports. As you scale, our paid tiers are priced transparently for solo creators.
+              Every user starts with a free plan providing 10 exports and 30 minutes of transcription per month, with zero hidden fees and no credit card required.
             </p>
           </Card>
         </div>
 
-        {/* Leadership & Publisher Transparency */}
-        <div className="p-8 rounded-3xl bg-surface-card border border-surface-border mb-20">
-          <div className="flex flex-col sm:flex-row items-center gap-6">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-accent-500 flex items-center justify-center text-white font-black text-2xl shrink-0 shadow-lg">
-              AA
-            </div>
-            <div className="text-center sm:text-left">
-              <h3 className="text-xl font-bold text-white">Founded &amp; Maintained by Ayush Argulwar</h3>
-              <p className="text-slate-400 text-sm mt-1 leading-relaxed">
-                ClipForge AI was created to provide a lightweight, modern, open-source video repurposing tool for independent creators and digital educators worldwide. Reach out directly at <a href="mailto:ayushargulwar77@gmail.com" className="text-brand-400 underline">ayushargulwar77@gmail.com</a>.
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* CTA */}
         <div className="text-center">
-          <Link to="/dashboard">
-            <Button size="lg" className="px-8 py-4 font-bold shadow-brand">
-              Launch Studio — Free Access →
+          <Link to="/signup">
+            <Button size="lg" className="px-8 font-bold">
+              Try ClipForge AI Free →
             </Button>
           </Link>
         </div>

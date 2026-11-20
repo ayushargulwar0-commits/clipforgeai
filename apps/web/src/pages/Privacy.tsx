@@ -2,6 +2,9 @@ import { PublicLayout } from '@/components/layout/PublicLayout'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { Shield, Lock, Eye, Cookie, Server, CheckCircle2, Mail } from 'lucide-react'
+import { Youtube } from '@/components/ui/Icons'
+
+const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || 'ayushargulwar77@gmail.com'
 
 export default function Privacy() {
   return (
@@ -14,223 +17,174 @@ export default function Privacy() {
             Privacy Policy
           </h1>
           <p className="text-slate-400 text-sm">
-            Last Updated: November 20, 2026 • Effective Date: November 20, 2026
+            Last Updated: November 21, 2026 • Effective Date: November 21, 2026
           </p>
         </div>
 
         {/* Content Box */}
         <Card className="p-8 sm:p-12 space-y-10 text-slate-300 text-sm leading-relaxed border-surface-border bg-surface-card">
-          {/* Summary Alert */}
+          {/* Summary Box */}
           <div className="p-4 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-200 text-xs sm:text-sm">
-            <strong>Important Summary:</strong> ClipForge AI respects your privacy and is committed to protecting your personal data. We do not sell your personal data or uploaded media. This Privacy Policy details how we collect, handle, protect, and use your information, including our advertising practices powered by Google AdSense.
+            <strong>Important Summary:</strong> ClipForge AI respects your privacy. We do not sell your personal data or uploaded media. This Privacy Policy explains our collection, usage, and protection practices, including our integration with YouTube API Services and Google AdSense.
           </div>
 
           {/* Section 1 */}
-          <section className="space-y-4">
+          <section className="space-y-3">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Shield size={20} className="text-brand-400" />
-              1. Introduction & Overview
+              1. Introduction
             </h2>
             <p>
-              Welcome to <strong>ClipForge AI</strong> (&ldquo;we&rdquo;, &ldquo;our&rdquo;, &ldquo;us&rdquo;), operating the website located at{' '}
-              <a href="https://clipforgeai.online" className="text-brand-400 underline">https://clipforgeai.online</a> (the &ldquo;Service&rdquo; or &ldquo;Site&rdquo;). This Privacy Policy explains our practices regarding the collection, storage, processing, and protection of information obtained through your access to or use of our Service.
+              Welcome to <strong>ClipForge AI</strong> (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;), operating the website located at{' '}
+              <a href="https://clipforgeai.online" className="text-brand-400 underline">https://clipforgeai.online</a>. We provide an automated video repurposing and subtitle editor platform designed for creators and media teams.
             </p>
             <p>
-              By accessing, browsing, or utilizing ClipForge AI, you acknowledge that you have read, understood, and agree to the data collection and usage practices described in this Privacy Policy. If you do not agree with this policy, please do not use our services.
+              This Privacy Policy explains what personal data and media assets we collect, how we store and process that information, and how you can exercise your privacy and data deletion rights.
             </p>
           </section>
 
-          {/* Section 2: AdSense & Third-Party Cookies (MANDATORY FOR GOOGLE ADSENSE) */}
+          {/* Section 2: YouTube API Services Disclosures */}
+          <section className="space-y-4 p-6 rounded-2xl bg-red-500/10 border border-red-500/20">
+            <h2 className="text-xl font-bold text-red-200 flex items-center gap-2">
+              <Youtube size={20} className="text-red-400" />
+              2. YouTube API Services &amp; Google User Data
+            </h2>
+            <p className="text-slate-200">
+              <strong>ClipForge AI uses YouTube API Services</strong> to allow creators to import permitted video footage, authorize their YouTube channel, and publish or schedule rendered vertical video Shorts directly to their channel.
+            </p>
+            <ul className="list-disc pl-5 space-y-2 text-slate-300 text-xs sm:text-sm">
+              <li>
+                <strong>Google Privacy Policy:</strong> By using our YouTube integration features, you acknowledge and agree that your use is subject to Google&rsquo;s policies. Please review the{' '}
+                <a
+                  href="http://www.google.com/policies/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-400 underline font-medium"
+                >
+                  Google Privacy Policy (http://www.google.com/policies/privacy)
+                </a>.
+              </li>
+              <li>
+                <strong>YouTube API Data Collected:</strong> When you connect your YouTube account, we collect and store: your account email, YouTube channel title, channel handle, channel ID, and OAuth access and refresh tokens. We use these tokens strictly to upload approved videos, read upload quota status, and retrieve the resulting video ID.
+              </li>
+              <li>
+                <strong>Revoking Access:</strong> You can revoke ClipForge AI&rsquo;s access to your YouTube data at any time via the Google Security Settings permissions page at:{' '}
+                <a
+                  href="https://security.google.com/settings/security/permissions"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-400 underline font-medium"
+                >
+                  https://security.google.com/settings/security/permissions
+                </a>.
+              </li>
+              <li>
+                <strong>No Third-Party Sharing:</strong> We do not transfer, sell, or share your Google user data or YouTube tokens with external advertising networks or data brokers.
+              </li>
+            </ul>
+          </section>
+
+          {/* Section 3: What Data We Collect */}
+          <section className="space-y-4">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Eye size={20} className="text-brand-400" />
+              3. What Data Is Collected
+            </h2>
+            <p>We collect and process the following categories of data:</p>
+            <ul className="list-disc pl-5 space-y-2 text-slate-300">
+              <li>
+                <strong>Account Email:</strong> Your email address provided during registration or OAuth sign-in, used for authentication, account notices, and customer support.
+              </li>
+              <li>
+                <strong>YouTube Channel Info &amp; Tokens:</strong> Channel name, channel ID, handle, and OAuth tokens obtained when you explicitly connect your YouTube channel for auto-publishing.
+              </li>
+              <li>
+                <strong>Uploaded or Imported Videos:</strong> Video and audio files (MP4, MOV, WebM) that you upload or URLs you import, ingested solely to generate speech transcripts, identify highlights, crop frames to 9:16, burn captions, and export rendered clips.
+              </li>
+              <li>
+                <strong>Usage Logs:</strong> System logs, IP addresses, browser types, timestamps, export job statuses, and error diagnostics to maintain system security and service availability.
+              </li>
+            </ul>
+          </section>
+
+          {/* Section 4: Data Deletion within 30 Days */}
+          <section className="space-y-4 p-6 rounded-2xl bg-surface-hover border border-surface-border">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Lock size={20} className="text-emerald-400" />
+              4. Data Retention &amp; Deletion of User Data on Request
+            </h2>
+            <p className="text-slate-300">
+              We retain user media and processing data only as long as necessary to deliver the requested service:
+            </p>
+            <ul className="list-disc pl-5 space-y-2 text-slate-300 text-xs sm:text-sm">
+              <li>
+                <strong>Temporary Media:</strong> Intermediate audio files, temporary frame extracts, and processing caches are purged automatically once rendering completes.
+              </li>
+              <li>
+                <strong>Deletion on Request Within 30 Days:</strong> You may request the permanent deletion of your account, email address, uploaded footage, rendered clips, and stored YouTube API tokens at any time. We will completely erase all associated personal data from our servers and storage systems within <strong>30 days</strong> of receiving your request.
+              </li>
+              <li>
+                <strong>How to Request Deletion:</strong> Send an email with your account email address to{' '}
+                <a href={`mailto:${SUPPORT_EMAIL}`} className="text-brand-400 underline font-medium">
+                  {SUPPORT_EMAIL}
+                </a>{' '}
+                with the subject line &ldquo;Data Deletion Request&rdquo;.
+              </li>
+            </ul>
+          </section>
+
+          {/* Section 5: Google AdSense Disclosures */}
           <section className="space-y-4 p-6 rounded-2xl bg-amber-500/10 border border-amber-500/20">
             <h2 className="text-xl font-bold text-amber-200 flex items-center gap-2">
               <Cookie size={20} className="text-amber-400" />
-              2. Google AdSense & Third-Party Advertising (Mandatory Disclosures)
+              5. Advertising &amp; Google AdSense Cookies
             </h2>
-            <p className="text-slate-200">
-              We display advertisements on our website through <strong>Google AdSense</strong> and affiliated third-party advertising networks to maintain free access to our AI video processing tools. In accordance with Google&rsquo;s publisher policies, we provide the following required disclosures:
+            <p className="text-slate-300">
+              We display advertisements through <strong>Google AdSense</strong> to support free access to our AI tools. In accordance with Google publisher requirements:
             </p>
-            <ul className="list-disc pl-5 space-y-2 text-slate-300">
+            <ul className="list-disc pl-5 space-y-2 text-slate-300 text-xs sm:text-sm">
               <li>
-                <strong>Third-Party Vendors:</strong> Third-party vendors, including <strong>Google LLC</strong>, use cookies (including the DoubleClick cookie) to serve ads based on a user&rsquo;s prior visits to this website (<code>clipforgeai.online</code>) or other websites across the Internet.
+                Third-party vendors, including Google LLC, use cookies (including the DoubleClick cookie) to serve ads based on prior visits to this website (<code>clipforgeai.online</code>) or other websites on the Internet.
               </li>
               <li>
-                <strong>Personalized Advertising:</strong> Google&rsquo;s use of advertising cookies enables it and its partners to serve ads to our users based on their visits to our site and/or other sites on the Internet.
+                Google&rsquo;s use of advertising cookies enables it and its partners to serve personalized ads to users based on browsing activity.
               </li>
               <li>
-                <strong>Opt-Out of Personalized Ads:</strong> Users may opt out of personalized advertising at any time by visiting Google&rsquo;s official Ad Settings page at:{' '}
+                You may opt out of personalized advertising by visiting the{' '}
                 <a
                   href="https://www.google.com/settings/ads"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-brand-400 underline font-medium"
                 >
-                  https://www.google.com/settings/ads
-                </a>.
-              </li>
-              <li>
-                <strong>Network Advertising Opt-Out:</strong> Alternatively, users can opt out of a third-party vendor&rsquo;s use of cookies for interest-based advertising by visiting the Digital Advertising Alliance Consumer Choice page at:{' '}
+                  Google Ads Settings page (https://www.google.com/settings/ads)
+                </a>{' '}
+                or the{' '}
                 <a
                   href="https://www.aboutads.info/choices/"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-brand-400 underline font-medium"
                 >
-                  https://www.aboutads.info/choices/
-                </a>{' '}
-                or the Network Advertising Initiative (NAI) opt-out tool at{' '}
-                <a
-                  href="https://optout.networkadvertising.org/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-brand-400 underline font-medium"
-                >
-                  https://optout.networkadvertising.org/
-                </a>.
-              </li>
-              <li>
-                <strong>Web Beacons & Ad Technology:</strong> Third-party ad servers or ad networks use technology in the advertisements and links that appear on ClipForge AI, which are sent directly to your browser. They automatically receive your IP address when this occurs. Other technologies (such as cookies, JavaScript, or Web Beacons) may also be used by the third-party ad networks to measure the effectiveness of their advertisements and/or to personalize the advertising content that you see.
-              </li>
-              <li>
-                ClipForge AI has no access to or control over these cookies that are used by third-party advertisers. For more details on Google&rsquo;s advertising practices, please consult the{' '}
-                <a
-                  href="https://policies.google.com/technologies/ads"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-brand-400 underline font-medium"
-                >
-                  Google Privacy & Terms for Advertising
+                  aboutads.info choices page
                 </a>.
               </li>
             </ul>
           </section>
 
-          {/* Section 3: Information We Collect */}
-          <section className="space-y-4">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Eye size={20} className="text-brand-400" />
-              3. Information We Collect
-            </h2>
-            <p>
-              We collect information in several ways when you interact with our platform:
-            </p>
-            <div className="space-y-3">
-              <div>
-                <h3 className="font-semibold text-slate-200">A. Personal Information You Provide</h3>
-                <p className="text-slate-400 text-xs mt-1">
-                  When you register an account, sign in, or contact us, we collect: your name, email address (e.g., via OAuth providers like Google or email sign-up), billing details (processed through secure PCI-compliant third-party gateways), and correspondence history.
-                </p>
-              </div>
-              <div>
-                <h3 className="font-semibold text-slate-200">B. User Media & Video Content</h3>
-                <p className="text-slate-400 text-xs mt-1">
-                  When you upload or import video files (MP4, MOV, YouTube URLs), our processing engine ingests the media file solely for generating audio transcripts, identifying highlights, applying aspect-ratio reframing, and rendering your requested short clips.
-                </p>
-              </div>
-              <div>
-                <h3 className="font-semibold text-slate-200">C. Automatically Collected Device & Usage Data</h3>
-                <p className="text-slate-400 text-xs mt-1">
-                  Log information: IP addresses, browser types, operating systems, referring URLs, access times, pages viewed, and device identifiers to protect against fraud and optimize server performance.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* Section 4: How We Use Information */}
-          <section className="space-y-4">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Server size={20} className="text-brand-400" />
-              4. How We Use Your Information
-            </h2>
-            <p>We use the data we collect solely for legitimate business purposes:</p>
-            <ul className="list-disc pl-5 space-y-1.5 text-slate-400 text-xs sm:text-sm">
-              <li>To provide, operate, maintain, and enhance the ClipForge AI video clipping and subtitle editor.</li>
-              <li>To authenticate user sessions, process account upgrades, and calculate export quotas.</li>
-              <li>To detect and prevent fraudulent activities, system abuse, and unauthorized access.</li>
-              <li>To communicate system maintenance announcements, security alerts, and feature updates.</li>
-              <li>To display non-intrusive, relevant advertisements via Google AdSense in accordance with user preferences.</li>
-              <li><strong>Zero Model Training:</strong> We DO NOT sell, rent, or trade your uploaded video footage or transcripts to third parties for external AI training.</li>
-            </ul>
-          </section>
-
-          {/* Section 5: Data Security & Retention */}
-          <section className="space-y-4">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Lock size={20} className="text-brand-400" />
-              5. Data Security & Retention
-            </h2>
-            <p>
-              We implement industry-standard technical and organizational security measures, including HTTPS/TLS 1.3 encryption in transit, strict access control policies, and isolated filesystem boundaries for media processing.
-            </p>
-            <p>
-              <strong>Media Retention:</strong> Temporary video processing caches and downloaded source files are purged after processing. Rendered clips and user account data remain stored securely until deleted by the user through the dashboard or upon account deletion requests.
-            </p>
-          </section>
-
-          {/* Section 6: GDPR & International Privacy Rights */}
-          <section className="space-y-4">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <CheckCircle2 size={20} className="text-brand-400" />
-              6. Your Rights Under GDPR (European Economic Area) & UK Laws
-            </h2>
-            <p>
-              If you are a resident of the European Economic Area (EEA) or the United Kingdom, you possess specific data protection rights under the General Data Protection Regulation (GDPR):
-            </p>
-            <ul className="list-disc pl-5 space-y-1 text-slate-400 text-xs sm:text-sm">
-              <li><strong>Right of Access:</strong> You may request copies of your personal information held by us.</li>
-              <li><strong>Right to Rectification:</strong> You may request correction of inaccurate or incomplete data.</li>
-              <li><strong>Right to Erasure (&ldquo;Right to be Forgotten&rdquo;):</strong> You may request the deletion of your personal data.</li>
-              <li><strong>Right to Restrict or Object to Processing:</strong> You may object to the processing of your data or request restriction.</li>
-              <li><strong>Right to Data Portability:</strong> You may request transfer of your data to another organization.</li>
-            </ul>
-            <p>
-              To exercise any of these rights, contact our Data Privacy Officer at{' '}
-              <a href="mailto:ayushargulwar77@gmail.com" className="text-brand-400 underline font-medium">
-                ayushargulwar77@gmail.com
-              </a>.
-            </p>
-          </section>
-
-          {/* Section 7: CCPA & California Privacy Rights */}
-          <section className="space-y-4">
-            <h2 className="text-xl font-bold text-white">
-              7. California Consumer Privacy Act (CCPA / CPRA)
-            </h2>
-            <p>
-              California residents are entitled to specific rights regarding their personal information:
-            </p>
-            <ul className="list-disc pl-5 space-y-1 text-slate-400 text-xs sm:text-sm">
-              <li>The right to know what personal information is collected, disclosed, or sold.</li>
-              <li>The right to delete personal information collected from you.</li>
-              <li>The right to opt-out of the sale or sharing of personal information. <strong>ClipForge AI does not sell personal information.</strong></li>
-              <li>The right to non-discrimination for exercising your CCPA privacy rights.</li>
-            </ul>
-          </section>
-
-          {/* Section 8: Children's Privacy */}
-          <section className="space-y-4">
-            <h2 className="text-xl font-bold text-white">
-              8. Children&rsquo;s Online Privacy Protection Act (COPPA)
-            </h2>
-            <p>
-              ClipForge AI does not direct its services to children under 13 years of age, nor do we knowingly collect personal identification information from children. If you believe your child has provided us with personal information, please contact us immediately, and we will promptly remove such information from our records.
-            </p>
-          </section>
-
-          {/* Section 9: Contact Information */}
+          {/* Section 6: Contact Information */}
           <section className="space-y-4 pt-6 border-t border-surface-border">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Mail size={20} className="text-brand-400" />
-              9. Contact Information & Data Controller
+              6. Contact Us
             </h2>
             <p>
-              If you have any questions, concerns, or requests regarding this Privacy Policy or our privacy practices, please contact our publisher and data controller:
+              If you have questions regarding this Privacy Policy or wish to request data access or deletion, please reach out to us:
             </p>
-            <div className="p-4 rounded-xl bg-surface-hover border border-surface-border text-xs sm:text-sm space-y-1 text-slate-300">
-              <p><strong>Site:</strong> ClipForge AI (https://clipforgeai.online)</p>
-              <p><strong>Publisher / Owner:</strong> Ayush Argulwar</p>
-              <p><strong>Publisher ID:</strong> pub-5485620248959858</p>
-              <p><strong>Direct Privacy Contact:</strong> <a href="mailto:ayushargulwar77@gmail.com" className="text-brand-400 underline">ayushargulwar77@gmail.com</a></p>
-              <p><strong>General Inquiries:</strong> <a href="mailto:support@clipforgeai.online" className="text-brand-400 underline">support@clipforgeai.online</a></p>
+            <div className="p-4 rounded-xl bg-surface-hover border border-surface-border text-xs sm:text-sm space-y-1.5 text-slate-300">
+              <p><strong>Platform:</strong> ClipForge AI (https://clipforgeai.online)</p>
+              <p><strong>Contact Email:</strong> <a href={`mailto:${SUPPORT_EMAIL}`} className="text-brand-400 underline">{SUPPORT_EMAIL}</a></p>
+              <p><strong>Response Time:</strong> Inquiries and data deletion requests are acknowledged within 48 hours and processed within 30 days.</p>
             </div>
           </section>
         </Card>

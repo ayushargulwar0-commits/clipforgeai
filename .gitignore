@@ -12,9 +12,11 @@ ENV/
 
 # Builds
 dist/
+dist-ssr/
 build/
 *.egg-info/
 .tmp/
+*.tsbuildinfo
 
 # Storage / Uploads
 storage/

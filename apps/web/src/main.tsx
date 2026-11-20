@@ -3,8 +3,21 @@ import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
+const rootElement = document.getElementById('root')!
+const pathname = window.location.pathname.replace(/\/$/, '') || '/'
+const isPrerenderedRoute = ['/', '/pricing', '/privacy', '/terms', '/contact', '/about'].includes(pathname)
+
+if (rootElement.hasChildNodes() && isPrerenderedRoute) {
+  ReactDOM.hydrateRoot(
+    rootElement,
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  )
+} else {
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  )
+}
