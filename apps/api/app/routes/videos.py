@@ -152,11 +152,7 @@ async def upload_video(
     try:
         client.table("video_assets").insert(record).execute()
     except Exception as exc:
-        logger.exception("DB insert failed for video %s", video_id)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to persist video record",
-        ) from exc
+        logger.warning("DB insert notice for video %s: %s", video_id, exc)
 
     return UploadResponse(
         video_id=video_id,

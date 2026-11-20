@@ -63,6 +63,21 @@ export default function About() {
           </Card>
         </div>
 
+        {/* Leadership & Publisher Transparency */}
+        <div className="p-8 rounded-3xl bg-surface-card border border-surface-border mb-20">
+          <div className="flex flex-col sm:flex-row items-center gap-6">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-accent-500 flex items-center justify-center text-white font-black text-2xl shrink-0 shadow-lg">
+              AA
+            </div>
+            <div className="text-center sm:text-left">
+              <h3 className="text-xl font-bold text-white">Founded &amp; Maintained by Ayush Argulwar</h3>
+              <p className="text-slate-400 text-sm mt-1 leading-relaxed">
+                ClipForge AI was created to provide a lightweight, modern, open-source video repurposing tool for independent creators and digital educators worldwide. Reach out directly at <a href="mailto:ayushargulwar77@gmail.com" className="text-brand-400 underline">ayushargulwar77@gmail.com</a>.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* CTA */}
         <div className="text-center">
           <Link to="/signup">

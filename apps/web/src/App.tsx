@@ -12,6 +12,11 @@ import Pricing        from '@/pages/Pricing'
 import FAQ            from '@/pages/FAQ'
 import About          from '@/pages/About'
 import Contact        from '@/pages/Contact'
+import Privacy        from '@/pages/Privacy'
+import Terms          from '@/pages/Terms'
+import CookiePolicy   from '@/pages/CookiePolicy'
+import Changelog      from '@/pages/Changelog'
+import Blog           from '@/pages/Blog'
 import NotFound       from '@/pages/NotFound'
 import Login          from '@/pages/auth/Login'
 import Signup         from '@/pages/auth/Signup'
@@ -63,6 +68,11 @@ export default function App() {
             <Route path="/faq"             element={<FAQ />} />
             <Route path="/about"           element={<About />} />
             <Route path="/contact"         element={<Contact />} />
+            <Route path="/privacy"         element={<Privacy />} />
+            <Route path="/terms"           element={<Terms />} />
+            <Route path="/cookie-policy"   element={<CookiePolicy />} />
+            <Route path="/changelog"       element={<Changelog />} />
+            <Route path="/blog"            element={<Blog />} />
 
             {/* Auth */}
             <Route path="/login"           element={<Login />} />

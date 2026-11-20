@@ -51,7 +51,8 @@ export default function Contact() {
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-white">Email Us</h4>
-                  <p className="text-xs text-slate-400">hello@clipforge.ai</p>
+                  <p className="text-xs text-slate-400">ayushargulwar77@gmail.com</p>
+                  <p className="text-xs text-slate-500">support@clipforgeai.online</p>
                 </div>
               </div>
               <p className="text-xs text-slate-500 mt-2">We reply within 1 business day.</p>

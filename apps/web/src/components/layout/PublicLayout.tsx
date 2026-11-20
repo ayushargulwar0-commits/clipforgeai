@@ -1,5 +1,6 @@
 import { Navbar } from './Navbar'
 import { Footer } from './Footer'
+import { CookieBanner } from '@/components/ui/CookieBanner'
 
 interface PublicLayoutProps {
   children: React.ReactNode
@@ -14,6 +15,7 @@ export function PublicLayout({ children, hideFooter }: PublicLayoutProps) {
         {children}
       </main>
       {!hideFooter && <Footer />}
+      <CookieBanner />
     </div>
   )
 }

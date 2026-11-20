@@ -1,40 +1,40 @@
 import { Link } from 'react-router-dom'
-import { Globe, Share2, MessageCircle, FileCode } from 'lucide-react'
+import { Globe, Share2, MessageCircle, FileCode, Video } from 'lucide-react'
 import { BrandLogo } from '@/components/ui/BrandLogo'
 
 const footerLinks = {
   Product: [
-    { label: 'Features',    href: '/features' },
-    { label: 'AI Tools',   href: '/ai-tools' },
-    { label: 'Pricing',    href: '/pricing' },
+    { label: 'Features',     href: '/features' },
+    { label: 'AI Tools',    href: '/ai-tools' },
+    { label: 'Pricing',     href: '/pricing' },
     { label: 'How It Works', href: '/how-it-works' },
-    { label: 'Changelog',  href: '#' },
+    { label: 'Changelog',   href: '/changelog' },
   ],
   'Use Cases': [
-    { label: 'Podcast Clips',    href: '/use-cases' },
-    { label: 'YouTube Shorts',   href: '/use-cases' },
-    { label: 'TikTok Reels',     href: '/use-cases' },
+    { label: 'Podcast Clips',     href: '/use-cases' },
+    { label: 'YouTube Shorts',    href: '/use-cases' },
+    { label: 'TikTok Reels',      href: '/use-cases' },
     { label: 'Gaming Highlights', href: '/use-cases' },
-    { label: 'Webinar Clips',    href: '/use-cases' },
+    { label: 'Webinar Clips',     href: '/use-cases' },
   ],
-  Company: [
-    { label: 'About',   href: '/about' },
-    { label: 'Contact', href: '/contact' },
-    { label: 'FAQ',     href: '/faq' },
-    { label: 'Blog',    href: '#' },
+  Resources: [
+    { label: 'Blog & Guides', href: '/blog' },
+    { label: 'FAQ',           href: '/faq' },
+    { label: 'About Us',      href: '/about' },
+    { label: 'Contact Us',    href: '/contact' },
   ],
   Legal: [
-    { label: 'Privacy Policy',  href: '#' },
-    { label: 'Terms of Service', href: '#' },
-    { label: 'Cookie Policy',   href: '#' },
+    { label: 'Privacy Policy',   href: '/privacy' },
+    { label: 'Terms of Service', href: '/terms' },
+    { label: 'Cookie Policy',    href: '/cookie-policy' },
   ],
 }
 
 const socials = [
-  { icon: <Share2 size={18} />, href: '#', label: 'Twitter' },
-  { icon: <FileCode size={18} />, href: 'https://github.com', label: 'GitHub' },
-  { icon: <Globe size={18} />, href: '#', label: 'Community' },
-  { icon: <MessageCircle size={18} />, href: '#', label: 'Discord' },
+  { icon: <Share2 size={18} />, href: 'https://twitter.com', label: 'Twitter' },
+  { icon: <FileCode size={18} />, href: 'https://github.com/ayushargulwar0-commits/clipforgeai', label: 'GitHub' },
+  { icon: <Video size={18} />, href: 'https://youtube.com', label: 'YouTube' },
+  { icon: <MessageCircle size={18} />, href: 'https://discord.com', label: 'Discord' },
 ]
 
 export function Footer() {
@@ -47,14 +47,20 @@ export function Footer() {
             <div className="mb-4">
               <BrandLogo size="md" />
             </div>
-            <p className="text-sm text-slate-500 leading-relaxed mb-6">
-              Forge viral short-form content from any long video. Powered by open-source AI.
+            <p className="text-sm text-slate-500 leading-relaxed mb-4">
+              Forge viral short-form content from any long video. Powered by open-source AI and high-precision media pipelines.
             </p>
+            <div className="text-xs text-slate-400 space-y-1 mb-6">
+              <p>Publisher: <strong>Ayush Argulwar</strong></p>
+              <p>Email: <a href="mailto:ayushargulwar77@gmail.com" className="text-brand-400 underline">ayushargulwar77@gmail.com</a></p>
+            </div>
             <div className="flex items-center gap-3">
               {socials.map(s => (
                 <a
                   key={s.label}
                   href={s.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   aria-label={s.label}
                   className="w-9 h-9 rounded-lg bg-surface-card border border-surface-border flex items-center justify-center text-slate-500 hover:text-white hover:border-brand-500/50 transition-all"
                 >
@@ -86,11 +92,15 @@ export function Footer() {
 
         <div className="mt-12 pt-8 border-t border-surface-border flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-slate-600">
-            © {new Date().getFullYear()} ClipForge AI. All rights reserved.
+            © {new Date().getFullYear()} ClipForge AI (clipforgeai.online). All rights reserved.
           </p>
-          <p className="text-xs text-slate-700">
-            Built with open-source AI tools. No paid APIs required.
-          </p>
+          <div className="flex items-center gap-4 text-xs text-slate-500">
+            <Link to="/privacy" className="hover:text-slate-300">Privacy Policy</Link>
+            <span>•</span>
+            <Link to="/terms" className="hover:text-slate-300">Terms of Service</Link>
+            <span>•</span>
+            <Link to="/cookie-policy" className="hover:text-slate-300">Cookie Policy</Link>
+          </div>
         </div>
       </div>
     </footer>
