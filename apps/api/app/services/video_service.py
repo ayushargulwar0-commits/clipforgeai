@@ -284,10 +284,11 @@ def download_video_from_url(url: str, output_dir: Path) -> dict:
     out_tmpl = str(output_dir / f"yt_{temp_id}_%(id)s.%(ext)s")
 
     ydl_opts = {
-        "format": "b[ext=mp4]/bv*[ext=mp4][height<=720]+ba[ext=m4a]/b/best",
+        "format": "bv*[height<=1080]+ba/b",
+        "merge_output_format": "mp4",
         "outtmpl": out_tmpl,
         "ffmpeg_location": ffmpeg_dir,
-        "max_filesize": 400 * 1024 * 1024,
+        "max_filesize": 500 * 1024 * 1024,
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
@@ -297,9 +298,25 @@ def download_video_from_url(url: str, output_dir: Path) -> dict:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
+            if not Path(filename).exists():
+                # Check for merged mp4 filename
+                mp4_cand = Path(filename).with_suffix(".mp4")
+                if mp4_cand.exists():
+                    filename = str(mp4_cand)
     except Exception as exc:
         logger.exception("yt-dlp download failed for %s", url)
-        raise RuntimeError(f"Failed to download video stream from URL: {exc}") from exc
+        err_msg = str(exc).lower()
+        if "sign in" in err_msg or "bot" in err_msg or "captcha" in err_msg or "confirm you" in err_msg:
+            user_facing = "YouTube bot-check or sign-in challenge encountered. Please upload the MP4 directly."
+        elif "private" in err_msg or "permission" in err_msg:
+            user_facing = "This YouTube video is private or access is restricted."
+        elif "unavailable" in err_msg or "not found" in err_msg or "404" in err_msg:
+            user_facing = "This YouTube video is unavailable or does not exist."
+        elif "too long" in err_msg or "max_filesize" in err_msg:
+            user_facing = "Video exceeds maximum allowed file size or duration."
+        else:
+            user_facing = f"Failed to download video: {str(exc)[:100]}"
+        raise RuntimeError(user_facing) from exc
 
     yt_id = extract_youtube_id(url)
     return {

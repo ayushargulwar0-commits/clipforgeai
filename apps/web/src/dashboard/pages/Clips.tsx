@@ -1,5 +1,5 @@
 import { Youtube } from '@/components/ui/Icons'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge, StatusBadge } from '@/components/ui/Badge'
@@ -25,6 +25,8 @@ import {
   Video,
   Volume2,
   ExternalLink,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react'
 import { YouTubePublishModal } from '@/components/youtube/YouTubePublishModal'
 import { formatDuration } from '@/lib/utils'
@@ -43,6 +45,7 @@ export interface ClipItem {
   score: number
   score_explanation?: string
   status:
+    | 'ready'
     | 'detected'
     | 'rendering'
     | 'rendered'
@@ -58,99 +61,55 @@ export interface ClipItem {
   video_url?: string
   thumbnail_url?: string
   created_at?: string
+  needs_reimport?: boolean
 }
-
-const INITIAL_CLIPS: ClipItem[] = [
-  {
-    id: 'yt-clip-1794763864649-1',
-    title: 'The Hardest Truth About Scaling to $10M ARR (Short)',
-    description: 'Founder breaks down why initial product-market fit does not guarantee scale.',
-    hook: 'Nobody tells you this about scaling...',
-    transcript_text:
-      'The hardest truth about scaling past ten million is that everything that got you there completely breaks down.',
-    start_time: 0.0,
-    end_time: 33.0,
-    duration: 33.0,
-    aspect_ratio: '9:16',
-    score: 98,
-    score_explanation: 'Strong controversial opening hook, emotional cadence, concise resolution.',
-    status: 'rendered',
-    youtube_id: '1laZgpd69Z0',
-    video_url: 'https://www.youtube.com/watch?v=1laZgpd69Z0',
-    thumbnail_url: 'https://img.youtube.com/vi/1laZgpd69Z0/hqdefault.jpg',
-  },
-  {
-    id: 'clip-1',
-    title: 'The Hardest Truth About Scaling to $10M ARR',
-    description: 'Founder breaks down why initial product-market fit does not guarantee scale.',
-    hook: 'Nobody tells you this about scaling...',
-    transcript_text:
-      'The hardest truth about scaling past ten million is that everything that got you there completely breaks down. Your first ten hires won’t be the ones who can run a thousand-person org.',
-    start_time: 142.5,
-    end_time: 178.0,
-    duration: 35.5,
-    aspect_ratio: '9:16',
-    score: 96,
-    score_explanation: 'Strong controversial opening hook, emotional cadence, concise resolution.',
-    status: 'rendered',
-    youtube_id: '1laZgpd69Z0',
-    video_url: 'https://www.youtube.com/watch?v=1laZgpd69Z0',
-    thumbnail_url: 'https://img.youtube.com/vi/1laZgpd69Z0/hqdefault.jpg',
-  },
-  {
-    id: 'clip-2',
-    title: 'Why 99% of Startups Pick the Wrong Tech Stack',
-    description: 'Engineering lead explains common microservices pitfalls for early teams.',
-    hook: 'Do not build microservices on day one.',
-    transcript_text:
-      'If you start with Kubernetes and microservices before you have ten paying customers, you are burning your runway on vanity engineering. Build a monolith until it hurts.',
-    start_time: 410.0,
-    end_time: 442.2,
-    duration: 32.2,
-    aspect_ratio: '9:16',
-    score: 91,
-    score_explanation: 'Direct advice, punchy rhetorical challenge, high audience retention cue.',
-    status: 'rendered',
-    youtube_id: 'dQw4w9WgXcQ',
-    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    thumbnail_url: 'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
-  },
-  {
-    id: 'clip-3',
-    title: 'One Rule That Boosted Our Organic TikTok Reach',
-    description: 'Growth marketer shares the 3-second retention framework.',
-    hook: 'The 3-second hook framework revealed.',
-    transcript_text:
-      'If you do not visually disrupt the feed in the first three seconds, your script does not matter. Use kinetic motion and text overlay immediately.',
-    start_time: 730.0,
-    end_time: 758.5,
-    duration: 28.5,
-    aspect_ratio: '9:16',
-    score: 87,
-    score_explanation: 'Actionable step-by-step insight, high potential for bookmarks and shares.',
-    status: 'detected',
-    youtube_id: 'jNQXAC9IVRw',
-    video_url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-    thumbnail_url: 'https://img.youtube.com/vi/jNQXAC9IVRw/hqdefault.jpg',
-  },
-]
 
 export default function Clips() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { success, info, error: toastError } = useToast()
 
-  // Load saved clips from localStorage, falling back to INITIAL_CLIPS
-  const [clips, setClips] = useState<ClipItem[]>(() => {
+  // Clips loaded ONLY from backend DB
+  const [clips, setClips] = useState<ClipItem[]>([])
+  const [isLoadingClips, setIsLoadingClips] = useState<boolean>(true)
+
+  const loadClipsFromApi = useCallback(async () => {
+    setIsLoadingClips(true)
     try {
-      const saved = localStorage.getItem('cf_user_clips')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed
+      const res = await api.get('/clips')
+      if (Array.isArray(res.data)) {
+        const mapped: ClipItem[] = res.data.map((c: any) => ({
+          id: c.id,
+          title: c.title || `Clip ${c.id}`,
+          description: c.description || '',
+          hook: c.hook || '',
+          transcript_text: c.transcript_text || '',
+          start_time: c.start ?? c.start_time ?? 0,
+          end_time: c.end ?? c.end_time ?? 30,
+          duration: c.duration || 30,
+          aspect_ratio: c.aspect_ratio || '9:16',
+          score: Math.round(c.score || 90),
+          score_explanation: c.score_explanation || '',
+          status: c.status || 'ready',
+          youtube_id: c.youtube_id,
+          video_url: c.source_url || c.rendered_path || '',
+          thumbnail_url: c.thumbnail_path || (c.youtube_id ? `https://img.youtube.com/vi/${c.youtube_id}/hqdefault.jpg` : undefined),
+          created_at: c.created_at,
+          needs_reimport: c.status === 'failed' || (!c.rendered_path && !c.file_path && c.status !== 'ready'),
+        }))
+        setClips(mapped)
       }
-    } catch (_) {}
-    return INITIAL_CLIPS
-  })
+    } catch (err: any) {
+      console.error('Error fetching clips from /api/clips:', err)
+      toastError('Error', 'Failed to load clips from server.')
+    } finally {
+      setIsLoadingClips(false)
+    }
+  }, [toastError])
+
+  useEffect(() => {
+    loadClipsFromApi()
+  }, [loadClipsFromApi])
 
   const [selectedClip, setSelectedClip] = useState<ClipItem | null>(null)
   const [publishClip, setPublishClip] = useState<ClipItem | null>(null)
@@ -160,13 +119,6 @@ export default function Clips() {
   const [detectModalOpen, setDetectModalOpen] = useState(false)
   const [inputUrl, setInputUrl] = useState('')
   const [detecting, setDetecting] = useState(false)
-
-  // Save to localStorage whenever clips change
-  useEffect(() => {
-    try {
-      localStorage.setItem('cf_user_clips', JSON.stringify(clips))
-    } catch (_) {}
-  }, [clips])
 
   // Handle URL import on mount if ?import= is in URL query or sessionStorage
   useEffect(() => {
@@ -245,30 +197,8 @@ export default function Clips() {
             if (curStatus === 'done' || curStatus === 'completed') {
               clearInterval(pollInterval)
               setDetecting(false)
-              const rawClips = jobData.clips || jobData.result?.clips || []
-              if (rawClips.length > 0) {
-                const finishedClips: ClipItem[] = rawClips.map((c: any) => ({
-                  id: c.id || ('clip-' + Math.random().toString(36).substr(2, 9)),
-                  title: c.title,
-                  description: c.description,
-                  hook: c.hook || c.hook_text,
-                  transcript_text: c.transcript_text || c.transcript,
-                  start_time: c.start_time || c.start || 0,
-                  end_time: c.end_time || c.end || 30,
-                  duration: c.duration || 30,
-                  aspect_ratio: '9:16',
-                  score: Math.round(c.score || 92),
-                  status: 'rendered',
-                  youtube_id: ytId || undefined,
-                  video_url: c.source_url || c.rendered_path || c.video_url,
-                  thumbnail_url: ytId
-                    ? 'https://img.youtube.com/vi/' + ytId + '/hqdefault.jpg'
-                    : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-                }))
-                setClips((prev) => [...finishedClips, ...prev.filter((c) => c.id !== tempId)])
-                success('AutoClip Shorts Ready!', 'Generated ' + finishedClips.length + ' 9:16 vertical Shorts with captions.')
-                setSelectedClip(finishedClips[0])
-              }
+              await loadClipsFromApi()
+              success('AutoClip Shorts Ready!', 'Generated 9:16 vertical Shorts with captions.')
             } else if (curStatus === 'failed') {
               clearInterval(pollInterval)
               setDetecting(false)
@@ -289,94 +219,21 @@ export default function Clips() {
       }
 
       if (res.data?.clips && res.data.clips.length > 0) {
-        const newClips: ClipItem[] = res.data.clips.map((c: any) => ({
-          ...c,
-          youtube_id: ytId || c.youtube_id,
-          video_url: c.source_url || (ytId ? undefined : c.video_url),
-          thumbnail_url: ytId
-            ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
-            : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-        }))
-
-        setClips((prev) => [...newClips, ...prev])
-        success('Clips Detected!', `Extracted ${newClips.length} clips from your video.`)
-        setSelectedClip(newClips[0])
+        await loadClipsFromApi()
+        success('Clips Detected!', `Extracted clips from your video.`)
         setDetectModalOpen(false)
         setInputUrl('')
+        setDetecting(false)
         return
       }
     } catch (err: any) {
-      console.warn('Backend URL ingestion warning, generating clips client-side:', err.message)
+      setDetecting(false)
+      const msg = err.response?.data?.detail || err.message || 'Could not import video'
+      toastError('Import Failed', msg)
+      return
+    } finally {
+      setDetecting(false)
     }
-
-    // Client-side fallback: generate real clips with YouTube embed support
-    const videoTitle = ytId ? `YouTube Video (${ytId})` : 'Imported Video Recording'
-    const generatedClips: ClipItem[] = [
-      {
-        id: 'yt-clip-' + Date.now() + '-1',
-        title: `${videoTitle} — Viral Opening Hook`,
-        description: 'Compelling opening insight with high audience engagement potential.',
-        hook: 'Watch this first 30 seconds carefully...',
-        transcript_text: 'The most important lesson in this entire video happens right here in the first minute.',
-        start_time: 15.0,
-        end_time: 48.0,
-        duration: 33.0,
-        aspect_ratio: '9:16',
-        score: 95,
-        score_explanation: 'Strong opening statement, quick pacing, clear thesis.',
-        status: 'detected',
-        youtube_id: ytId || undefined,
-        video_url: ytId ? `https://www.youtube.com/watch?v=${ytId}` : '/sample-clip.mp4',
-        thumbnail_url: ytId
-          ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
-          : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-      },
-      {
-        id: 'yt-clip-' + Date.now() + '-2',
-        title: `${videoTitle} — Key Breakdown`,
-        description: 'Crucial explanatory segment perfect for educational micro-content.',
-        hook: 'The secret nobody understands is...',
-        transcript_text: 'When you look at the fundamental principles, the common assumption is completely backwards.',
-        start_time: 65.0,
-        end_time: 98.5,
-        duration: 33.5,
-        aspect_ratio: '9:16',
-        score: 91,
-        score_explanation: 'High information density and logical resolution.',
-        status: 'detected',
-        youtube_id: ytId || undefined,
-        video_url: ytId ? `https://www.youtube.com/watch?v=${ytId}` : '/sample-clip.mp4',
-        thumbnail_url: ytId
-          ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
-          : 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=600&auto=format&fit=crop&q=80',
-      },
-      {
-        id: 'yt-clip-' + Date.now() + '-3',
-        title: `${videoTitle} — Climax & Takeaway`,
-        description: 'Strong takeaway quote that drives comments and shares.',
-        hook: 'This changes how you think about everything.',
-        transcript_text: 'If you take away only one insight from this entire discussion, let it be this principle.',
-        start_time: 120.0,
-        end_time: 155.0,
-        duration: 35.0,
-        aspect_ratio: '9:16',
-        score: 88,
-        score_explanation: 'Punchy resolution, high bookmark and share affinity.',
-        status: 'detected',
-        youtube_id: ytId || undefined,
-        video_url: ytId ? `https://www.youtube.com/watch?v=${ytId}` : '/sample-clip.mp4',
-        thumbnail_url: ytId
-          ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
-          : 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=600&auto=format&fit=crop&q=80',
-      },
-    ]
-
-    setClips((prev) => [...generatedClips, ...prev])
-    success('Clips Generated!', `Generated 3 viral moments from your video URL.`)
-    setSelectedClip(generatedClips[0])
-    setDetectModalOpen(false)
-    setInputUrl('')
-    setDetecting(false)
   }
 
   const handleRender = async (clip: ClipItem) => {
@@ -464,7 +321,12 @@ export default function Clips() {
       </div>
 
       {/* Grid of Clips */}
-      {clips.length === 0 ? (
+      {isLoadingClips ? (
+        <div className="flex flex-col items-center justify-center p-12 text-slate-400">
+          <RefreshCw size={24} className="animate-spin text-brand-400 mb-3" />
+          <p className="text-sm">Loading your clips from database...</p>
+        </div>
+      ) : clips.length === 0 ? (
         <EmptyState
           icon={<Scissors size={32} />}
           title="No clips detected yet"
@@ -514,15 +376,22 @@ export default function Clips() {
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/60 group-hover:via-black/20 transition-all" />
 
                     {/* Top Duration Badge & Status */}
-                    <div className="flex justify-between items-start relative z-10">
+                    <div className="flex justify-between items-start relative z-10 gap-1.5 flex-wrap">
                       <Badge variant="brand" className="text-[10px] bg-black/60 backdrop-blur font-mono">
                         {formatDuration(clip.duration)}
                       </Badge>
-                      {clip.youtube_id && (
-                        <span className="px-1.5 py-0.5 rounded bg-red-600/80 text-[10px] text-white font-bold tracking-tight">
-                          YouTube
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {clip.needs_reimport && (
+                          <span className="px-1.5 py-0.5 rounded bg-red-950/80 border border-red-500/50 text-[10px] text-red-300 font-semibold">
+                            Needs re-import
+                          </span>
+                        )}
+                        {clip.youtube_id && (
+                          <span className="px-1.5 py-0.5 rounded bg-red-600/80 text-[10px] text-white font-bold tracking-tight">
+                            YouTube
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Processing Overlay OR Prominent Play Button */}

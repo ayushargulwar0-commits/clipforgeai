@@ -94,77 +94,14 @@ export function VideoUploader({ onUploadComplete, projectId }: VideoUploaderProp
       const count = res.data?.clips?.length || 0
       success('Source Processed', `Extracted ${count} clips from ${res.data?.title || 'video'}.`)
 
-      if (res.data?.clips) {
-        try {
-          const current = JSON.parse(localStorage.getItem('cf_user_clips') || '[]')
-          localStorage.setItem('cf_user_clips', JSON.stringify([...res.data.clips, ...current]))
-        } catch (_) {}
-      }
-
       if (onUploadComplete) {
         onUploadComplete(res.data)
       }
       setUrlInput('')
     } catch (err: any) {
-      console.warn('Backend URL upload notice, using client fallback:', err.message)
-      setProgress(85)
-      // Client-side fallback clips
-      const fallbackClips = [
-        {
-          id: 'yt-clip-' + Date.now() + '-1',
-          title: `YouTube Video (${ytId || 'clip'}) — Viral Opening`,
-          description: 'High-impact opening moment with fast audience hook.',
-          hook: 'The biggest truth you need to know...',
-          transcript_text: 'The most important lesson in this entire video starts right here.',
-          start_time: 15.0,
-          end_time: 48.0,
-          duration: 33.0,
-          aspect_ratio: '9:16',
-          score: 95,
-          score_explanation: 'Strong opening hook and fast pacing.',
-          status: 'detected',
-          youtube_id: ytId || undefined,
-          video_url: '/sample-clip.mp4',
-          thumbnail_url: ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : undefined,
-        },
-        {
-          id: 'yt-clip-' + Date.now() + '-2',
-          title: `YouTube Video (${ytId || 'clip'}) — Core Breakdown`,
-          description: 'Key takeaway segment with high bookmark potential.',
-          hook: 'The secret nobody understands...',
-          transcript_text: 'When you break down the fundamental metrics, the truth is clear.',
-          start_time: 60.0,
-          end_time: 92.5,
-          duration: 32.5,
-          aspect_ratio: '9:16',
-          score: 91,
-          score_explanation: 'Actionable insight structure.',
-          status: 'detected',
-          youtube_id: ytId || undefined,
-          video_url: '/sample-clip.mp4',
-          thumbnail_url: ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : undefined,
-        },
-      ]
-
-      try {
-        const current = JSON.parse(localStorage.getItem('cf_user_clips') || '[]')
-        localStorage.setItem('cf_user_clips', JSON.stringify([...fallbackClips, ...current]))
-      } catch (_) {}
-
-      setProgress(100)
-      success('Clips Generated!', 'Detected viral clips from video URL.')
-
-      if (onUploadComplete) {
-        onUploadComplete({
-          video_id: 'yt-' + (ytId || Date.now()),
-          filename: `YouTube Video (${ytId || 'Imported'})`,
-          file_size: 25000000,
-          duration: 120,
-          status: 'ready',
-          clips: fallbackClips,
-        })
-      }
-      setUrlInput('')
+      setProgress(0)
+      const msg = err.response?.data?.detail || err.message || 'URL import failed'
+      error('Import Failed', msg)
     } finally {
       setUploading(false)
     }

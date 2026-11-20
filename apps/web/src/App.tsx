@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ToastProvider } from '@/components/ui/Toast'
 
@@ -42,6 +42,11 @@ const queryClient = new QueryClient({
   },
 })
 
+function KeyedEditor() {
+  const { clipId } = useParams()
+  return <Editor key={clipId || 'default'} />
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -78,8 +83,8 @@ export default function App() {
               <Route path="videos"    element={<Videos />} />
               <Route path="clips"     element={<Clips />} />
               <Route path="tools"     element={<AITools />} />
-              <Route path="editor"    element={<Editor />} />
-              <Route path="editor/:clipId" element={<Editor />} />
+              <Route path="editor"    element={<KeyedEditor />} />
+              <Route path="editor/:clipId" element={<KeyedEditor />} />
               <Route path="brand-kit" element={<BrandKit />} />
               <Route path="scheduler" element={<Scheduler />} />
               <Route path="usage"     element={<Usage />} />

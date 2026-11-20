@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from app.core.config import get_settings
-from app.core.database import get_supabase
+from app.core.database import get_supabase, save_sqlite_clip
 from app.services.usage_service import deduct_credits, refund_credit, reserve_credit
 
 logger = logging.getLogger(__name__)
@@ -321,15 +321,20 @@ class AutoClipService:
             # Prioritize 9:16 vertical short
             source_file = Path(rc.get("shorts_path") or rc.get("file_path", ""))
 
-            stored_filename = f"autoclip_{clip_id[:8]}_shorts.mp4"
-            dest_file = target_storage_dir / stored_filename
+            dest_file = target_storage_dir / f"{clip_id}.mp4"
 
             if source_file.exists():
                 try:
+                    # Copy to canonical storage/clips/{clip_id}.mp4
                     shutil.copy2(source_file, dest_file)
                 except Exception as exc:
                     logger.warning("Could not copy clip file: %s, using source directly", exc)
                     dest_file = source_file
+
+            from app.routes.clips import verify_video_file
+            is_valid, probed_dur, err = verify_video_file(dest_file) if dest_file.exists() else (False, 0.0, "File missing")
+            clip_status = "ready" if is_valid else "failed"
+            final_duration = probed_dur if probed_dur > 0 else float(rc.get("duration", 30.0))
             
             web_url = f"/storage/clips/{dest_file.name}"
             title = rc.get("title") or f"Short Highlight #{idx + 1}"
@@ -345,18 +350,27 @@ class AutoClipService:
                 "description": description,
                 "hook": rc.get("hook_text") or "",
                 "transcript_text": rc.get("transcript") or "",
-                "start_time": rc.get("start", 0.0),
-                "end_time": rc.get("end", 0.0),
-                "duration": rc.get("duration", 0.0),
+                "start": float(rc.get("start", 0.0)),
+                "end": float(rc.get("end", final_duration)),
+                "start_time": float(rc.get("start", 0.0)),
+                "end_time": float(rc.get("end", final_duration)),
+                "duration": final_duration,
                 "aspect_ratio": "9:16",
-                "status": "rendered",
+                "status": clip_status,
                 "score": rc.get("score", 90),
+                "file_path": str(dest_file.resolve()) if is_valid else "",
                 "source_url": web_url,
                 "video_url": web_url,
                 "rendered_path": str(dest_file.resolve()),
+                "error_message": None if is_valid else err,
                 "created_at": now,
                 "updated_at": now,
             }
+
+            try:
+                save_sqlite_clip(clip_record)
+            except Exception as exc:
+                logger.warning("Failed to save clip %s to SQLite: %s", clip_id, exc)
 
             try:
                 client.table("clips").insert(clip_record).execute()

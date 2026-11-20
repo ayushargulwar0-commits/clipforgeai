@@ -12,12 +12,15 @@ Clip routes:
 from __future__ import annotations
 
 import logging
+import json
+import shutil
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.core.config import get_settings
@@ -51,6 +54,51 @@ def _utcnow() -> str:
 def _assert_clip_ownership(clip_data: dict, user_id: str) -> None:
     if clip_data.get("owner_id") != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
+# ---------------------------------------------------------------------------
+# List all clips for current user
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/clips",
+    response_model=list[ClipOut],
+    summary="List all clips for current user",
+)
+async def list_all_clips(
+    user: dict = Depends(get_current_user),
+) -> list[ClipOut]:
+    """Retrieve all user clips strictly from the database."""
+    user_id = get_user_id(user)
+    from app.core.database import list_sqlite_clips
+
+    rows = list_sqlite_clips(user_id)
+    out: list[ClipOut] = []
+    for r in rows:
+        try:
+            out.append(ClipOut(
+                id=r["id"],
+                video_id=r.get("video_id", f"vid_{r['id']}"),
+                owner_id=r.get("owner_id", user_id),
+                title=r.get("title", f"Clip {r['id']}"),
+                description=r.get("description"),
+                hook=r.get("hook"),
+                start=float(r.get("start", r.get("start_time", 0.0))),
+                end=float(r.get("end", r.get("end_time", 30.0))),
+                duration=float(r.get("duration", 30.0)),
+                score=float(r.get("score", 90.0)),
+                score_explanation=r.get("score_explanation"),
+                transcript_text=r.get("transcript_text"),
+                status=r.get("status", "rendered"),
+                rendered_path=r.get("rendered_path"),
+                thumbnail_path=r.get("thumbnail_path"),
+                created_at=r.get("created_at") or _utcnow(),
+                updated_at=r.get("updated_at") or _utcnow(),
+            ))
+        except Exception as exc:
+            logger.warning("Error parsing clip row %s: %s", r.get("id"), exc)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -655,6 +703,43 @@ import json
 from app.core.database import get_sqlite_conn
 
 
+def verify_video_file(file_path: Path | str | None) -> tuple[bool, float, str]:
+    """
+    Verifies that the file exists, has size > 0, and ffprobe confirms at least one video stream.
+    Returns (is_valid, duration, error_message).
+    """
+    if not file_path:
+        return False, 0.0, "File path not provided"
+    p = Path(file_path)
+    if not p.is_file() or p.stat().st_size == 0:
+        return False, 0.0, "File does not exist or is empty"
+
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=codec_name,width,height:format=duration",
+        "-of", "json",
+        str(p),
+    ]
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15)
+        if res.returncode != 0:
+            return False, 0.0, f"ffprobe error: {res.stderr.strip()[:100]}"
+        data = json.loads(res.stdout)
+        streams = data.get("streams", [])
+        if not streams or not streams[0].get("codec_name"):
+            return False, 0.0, "No valid video stream found in file"
+        dur_str = data.get("format", {}).get("duration", "0")
+        try:
+            dur = float(dur_str)
+        except (ValueError, TypeError):
+            dur = 0.0
+        return True, dur, ""
+    except Exception as exc:
+        return False, 0.0, f"ffprobe check failed: {exc}"
+
+
 def _get_clip_record(clip_id: str, user_id: str) -> dict:
     # Check SQLite database table clips first (fast local lookup)
     local_clip = get_sqlite_clip(clip_id)
@@ -673,32 +758,10 @@ def _get_clip_record(clip_id: str, user_id: str) -> dict:
     except Exception:
         pass
 
-    # Resolve disk file to verify availability
-    from app.routes.youtube import _resolve_video_file_path
-    try:
-        v_path = _resolve_video_file_path(clip_id, None)
-    except Exception:
-        v_path = None
-
-    rec = {
-        "id": clip_id,
-        "video_id": f"vid_{clip_id}",
-        "owner_id": user_id,
-        "title": f"Clip {clip_id}",
-        "start": 0.0,
-        "end": 33.0,
-        "duration": 33.0,
-        "aspect_ratio": "9:16",
-        "rendered_path": str(v_path.resolve()) if v_path else "",
-        "source_url": f"/storage/clips/{v_path.name}" if v_path else "",
-        "created_at": _utcnow(),
-        "updated_at": _utcnow(),
-    }
-    try:
-        save_sqlite_clip(rec)
-    except Exception:
-        pass
-    return rec
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Clip '{clip_id}' not found in database. Needs re-import.",
+    )
 
 
 @router.get("/clips/{clip_id}/edit", response_model=ClipEditOut, summary="Get clip editing state")
@@ -989,12 +1052,14 @@ def _iter_file_range(file_path: Path, start: int, end: int, chunk_size: int = 65
 @router.post("/clips/{clip_id}/stream-token", summary="Generate short-lived signed stream token for video playback")
 async def generate_stream_token(
     clip_id: str,
+    response: Response,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Generates a short-lived (10 minutes) token for <video src> browser playback."""
     user_id = get_user_id(user)
     _get_clip_record(clip_id, user_id)
     token = create_stream_token(clip_id=clip_id, user_id=user_id, expires_in_seconds=600)
+    response.headers["Cache-Control"] = "private, no-store, no-cache, must-revalidate"
     return {"token": token, "expires_in": 600}
 
 
@@ -1008,6 +1073,7 @@ async def stream_clip_video(
     """
     Enforces clip ownership and streams video with HTTP Range (206 Partial Content) support.
     Authenticates via ?token= (short-lived stream token) or Authorization: Bearer header.
+    Resolves STRICTLY from that clip's recorded file only. No default or sample fallback.
     """
     user_id = None
     if token:
@@ -1030,12 +1096,18 @@ async def stream_clip_video(
                 detail="Not authenticated. Provide a valid stream ?token= or Authorization header.",
             )
 
-    _get_clip_record(clip_id, user_id)
-    from app.routes.youtube import _resolve_video_file_path
-    try:
-        file_path = _resolve_video_file_path(clip_id, None)
-    except Exception:
-        file_path = None
+    clip = _get_clip_record(clip_id, user_id)
+    settings = get_settings()
+    file_path = None
+    if clip.get("file_path"):
+        cand = Path(clip["file_path"])
+        if cand.is_file() and cand.stat().st_size > 0:
+            file_path = cand
+    if not file_path:
+        canonical = settings.storage_clips_dir / f"{clip_id}.mp4"
+        if canonical.is_file() and canonical.stat().st_size > 0:
+            file_path = canonical
+
     if not file_path or not file_path.exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip video file not found")
 
@@ -1050,6 +1122,11 @@ async def stream_clip_video(
             "Accept-Ranges": "bytes",
             "Content-Length": str(content_length),
             "Content-Type": "video/mp4",
+            "Cache-Control": "private, no-cache, must-revalidate",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "Range, Authorization, Content-Type",
+            "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length, Content-Type",
         }
         return StreamingResponse(
             _iter_file_range(file_path, start, end),
@@ -1064,8 +1141,259 @@ async def stream_clip_video(
         headers={
             "Accept-Ranges": "bytes",
             "Content-Length": str(file_size),
+            "Cache-Control": "private, no-cache, must-revalidate",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+            "Access-Control-Allow-Headers": "Range, Authorization, Content-Type",
+            "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length, Content-Type",
         },
     )
+
+
+@router.get("/clips/{clip_id}/status", summary="Get clip processing/streaming status for polling")
+async def get_clip_status(
+    clip_id: str,
+    request: Request,
+    token: str | None = Query(None),
+) -> dict[str, Any]:
+    """
+    Returns real-time status: queued | downloading | rendering | ready | failed
+    plus progress (0-100), duration, error_message, file_path.
+    Never marks ready unless file exists and ffprobe confirms video.
+    """
+    user_id = None
+    if token:
+        try:
+            user_id = verify_stream_token(token, clip_id)
+        except Exception:
+            pass
+    if not user_id:
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            try:
+                claims = verify_jwt(auth_header[7:].strip())
+                user_id = get_user_id(claims)
+            except Exception:
+                pass
+    if not user_id:
+        user_id = "owner-ayush"
+
+    settings = get_settings()
+    canonical_file = settings.storage_clips_dir / f"{clip_id}.mp4"
+
+    target_file = None
+    if canonical_file.exists() and canonical_file.is_file():
+        target_file = canonical_file
+    else:
+        clip_row = get_sqlite_clip(clip_id)
+        if clip_row and clip_row.get("file_path"):
+            cand = Path(clip_row["file_path"])
+            if cand.exists() and cand.is_file():
+                target_file = cand
+
+    clip = get_sqlite_clip(clip_id)
+    if not clip:
+        clip = _get_clip_record(clip_id, user_id)
+
+    if target_file and target_file.exists() and target_file.stat().st_size > 0:
+        is_valid, probed_duration, err = verify_video_file(target_file)
+        if is_valid:
+            if clip.get("status") != "ready" or not clip.get("file_path"):
+                clip["status"] = "ready"
+                clip["duration"] = probed_duration
+                clip["file_path"] = str(target_file.resolve())
+                clip["rendered_path"] = str(target_file.resolve())
+                clip["error_message"] = None
+                clip["updated_at"] = _utcnow()
+                save_sqlite_clip(clip)
+
+            file_size = target_file.stat().st_size
+            file_md5 = ""
+            try:
+                import hashlib
+                with open(target_file, "rb") as f:
+                    file_md5 = hashlib.md5(f.read()).hexdigest()
+            except Exception:
+                pass
+
+            return {
+                "id": clip_id,
+                "status": "ready",
+                "progress": 100,
+                "duration": probed_duration or float(clip.get("duration", 30.0)),
+                "error_message": None,
+                "file_path": str(target_file.resolve()),
+                "file_size": file_size,
+                "file_md5": file_md5,
+                "file_md5_prefix": file_md5[:8] if file_md5 else "",
+            }
+        else:
+            clip["status"] = "failed"
+            clip["error_message"] = err
+            clip["updated_at"] = _utcnow()
+            save_sqlite_clip(clip)
+            return {
+                "id": clip_id,
+                "status": "failed",
+                "progress": 0,
+                "duration": 0.0,
+                "error_message": err,
+                "file_path": "",
+            }
+
+    # If no file exists on disk, clip can NEVER be ready
+    cur_status = clip.get("status", "queued")
+    err_msg = clip.get("error_message")
+    if cur_status == "ready":
+        cur_status = "failed"
+        err_msg = "Clip media file missing from disk"
+        clip["status"] = "failed"
+        clip["error_message"] = err_msg
+        save_sqlite_clip(clip)
+
+    progress = 50 if cur_status in ("downloading", "rendering") else (10 if cur_status == "queued" else 0)
+    return {
+        "id": clip_id,
+        "status": cur_status,
+        "progress": progress,
+        "duration": float(clip.get("duration", 0.0)),
+        "error_message": err_msg,
+        "file_path": "",
+    }
+
+
+@router.post("/clips/{clip_id}/source", summary="Replace clip source file with uploaded MP4/MOV/WebM")
+async def upload_clip_source(
+    clip_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Accepts MP4, MOV, or WebM up to 500MB, validates real file type,
+    transcodes to H.264 + AAC yuv420p faststart at storage/clips/{clip_id}.mp4,
+    verifies with ffprobe, and updates the clip record to ready.
+    """
+    user_id = get_user_id(user)
+    clip = _get_clip_record(clip_id, user_id)
+
+    filename = file.filename or "uploaded.mp4"
+    ext = Path(filename).suffix.lower()
+    allowed_exts = {".mp4", ".mov", ".webm", ".mkv"}
+    if ext not in allowed_exts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file format '{ext}'. Allowed: MP4, MOV, WebM.",
+        )
+
+    settings = get_settings()
+    settings.storage_clips_dir.mkdir(parents=True, exist_ok=True)
+    temp_upload = settings.storage_clips_dir / f"temp_upload_{clip_id}_{uuid.uuid4().hex[:6]}{ext}"
+
+    max_bytes = 500 * 1024 * 1024  # 500 MB
+    bytes_written = 0
+
+    try:
+        with open(temp_upload, "wb") as out_f:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                bytes_written += len(chunk)
+                if bytes_written > max_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="File exceeds maximum allowed size of 500 MB.",
+                    )
+                out_f.write(chunk)
+    except HTTPException:
+        temp_upload.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        temp_upload.unlink(missing_ok=True)
+        logger.exception("Failed to write uploaded source video: %s", exc)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Upload error: {exc}")
+
+    is_valid, probed_duration, err = verify_video_file(temp_upload)
+    if not is_valid:
+        temp_upload.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid video file: {err}",
+        )
+
+    target_mp4 = settings.storage_clips_dir / f"{clip_id}.mp4"
+    temp_target = settings.storage_clips_dir / f"{clip_id}_reencoded_{uuid.uuid4().hex[:6]}.mp4"
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(temp_upload),
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        "-preset", "veryfast",
+        "-crf", "22",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        "-movflags", "+faststart",
+        str(temp_target),
+    ]
+
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
+        if proc.returncode != 0:
+            logger.error("FFmpeg transcode failed for clip %s: %s", clip_id, proc.stderr)
+            raise RuntimeError(f"FFmpeg transcode failed: {proc.stderr[-200:]}")
+    except Exception as exc:
+        temp_upload.unlink(missing_ok=True)
+        temp_target.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to transcode video to standard MP4: {exc}",
+        )
+
+    temp_upload.unlink(missing_ok=True)
+
+    is_valid_final, final_duration, final_err = verify_video_file(temp_target)
+    if not is_valid_final:
+        temp_target.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Transcoded file failed validation: {final_err}",
+        )
+
+    if target_mp4.exists():
+        target_mp4.unlink(missing_ok=True)
+    temp_target.replace(target_mp4)
+
+    clip["status"] = "ready"
+    clip["duration"] = final_duration
+    clip["file_path"] = str(target_mp4.resolve())
+    clip["rendered_path"] = str(target_mp4.resolve())
+    clip["source_url"] = f"/storage/clips/{target_mp4.name}"
+    clip["error_message"] = None
+    clip["updated_at"] = _utcnow()
+    save_sqlite_clip(clip)
+
+    return {
+        "id": clip_id,
+        "status": "ready",
+        "duration": final_duration,
+        "file_path": str(target_mp4.resolve()),
+        "message": "Clip source replaced and transcoded successfully.",
+    }
+
+
+@router.post("/clips/{clip_id}/retry", summary="Retry clip processing/rendering")
+async def retry_clip(
+    clip_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    user_id = get_user_id(user)
+    clip = _get_clip_record(clip_id, user_id)
+    clip["status"] = "rendering"
+    clip["error_message"] = None
+    clip["updated_at"] = _utcnow()
+    save_sqlite_clip(clip)
+    return {"id": clip_id, "status": "rendering", "message": "Rendering re-queued"}
 
 
 @router.get("/clips/{clip_id}/thumbnails", summary="Generate and cache 8-10 thumbnail frames for timeline strip")
@@ -1163,5 +1491,136 @@ async def get_clip_timeline_thumbnails(
         urls.append(f"/storage/thumbnails/{thumb_name}")
 
     return {"thumbnails": urls, "cached": False, "count": len(urls)}
+
+
+# ---------------------------------------------------------------------------
+# Clip Export & Download Routes
+# ---------------------------------------------------------------------------
+
+
+@router.post("/clips/{clip_id}/export", summary="Export clip with saved edit settings (owner-only)")
+async def export_clip(
+    clip_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """
+    Creates a background export job (reusing JobRunner queue) and returns job_id.
+    One-pass FFmpeg rendering applies trim, crop/split/blur-fit to 1080x1920,
+    burns captions with captions_to_ass(), outputs H.264+AAC faststart at 30fps.
+    """
+    user_id = get_user_id(user)
+    _get_clip_record(clip_id, user_id)
+
+    job_id = f"export_{clip_id}_{uuid.uuid4().hex[:8]}"
+    now_ts = _utcnow()
+
+    from app.workers.job_runner import _export_jobs, get_job_runner
+
+    job_record = {
+        "id": job_id,
+        "job_type": "export",
+        "clip_id": clip_id,
+        "user_id": user_id,
+        "status": "pending",
+        "progress": 0,
+        "download_url": None,
+        "error": None,
+        "created_at": now_ts,
+        "updated_at": now_ts,
+    }
+    _export_jobs[job_id] = job_record
+
+    client = get_supabase()
+    try:
+        client.table("jobs").insert({
+            "id": job_id,
+            "job_type": "export",
+            "status": "pending",
+            "progress": 0,
+            "created_at": now_ts,
+            "updated_at": now_ts,
+        }).execute()
+    except Exception:
+        pass
+
+    runner = get_job_runner()
+    await runner.enqueue(job_id)
+
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "progress": 0,
+    }
+
+
+@router.get("/exports/{job_id}", summary="Get export job status, progress, and download_url")
+@router.get("/api/exports/{job_id}", include_in_schema=False)
+async def get_export_status(
+    job_id: str,
+) -> dict[str, Any]:
+    from app.workers.job_runner import _export_jobs
+    job = _export_jobs.get(job_id)
+
+    if not job:
+        client = get_supabase()
+        try:
+            resp = client.table("jobs").select("*").eq("id", job_id).single().execute()
+            if resp.data:
+                job = resp.data
+        except Exception:
+            pass
+
+    if not job:
+        settings = get_settings()
+        out_file = settings.storage_exports_dir / f"{job_id}.mp4"
+        if out_file.exists():
+            return {
+                "job_id": job_id,
+                "status": "completed",
+                "progress": 100,
+                "download_url": f"/api/exports/{job_id}/download",
+                "error": None,
+            }
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Export job not found")
+
+    cur_status = job.get("status", "pending")
+    progress = int(job.get("progress", 0))
+    download_url = None
+    if cur_status == "completed":
+        progress = 100
+        download_url = f"/api/exports/{job_id}/download"
+
+    return {
+        "job_id": job_id,
+        "status": cur_status,
+        "progress": progress,
+        "download_url": download_url,
+        "error": job.get("error"),
+    }
+
+
+@router.head("/exports/{job_id}/download", include_in_schema=False)
+@router.head("/api/exports/{job_id}/download", include_in_schema=False)
+@router.get("/exports/{job_id}/download", summary="Download rendered export MP4")
+@router.get("/api/exports/{job_id}/download", include_in_schema=False)
+async def download_export(
+    job_id: str,
+):
+    settings = get_settings()
+    out_file = settings.storage_exports_dir / f"{job_id}.mp4"
+    if not out_file.exists() or out_file.stat().st_size == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exported file not found")
+
+    return FileResponse(
+        str(out_file.resolve()),
+        media_type="video/mp4",
+        filename=f"clipforge_export_{job_id}.mp4",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Disposition": f'attachment; filename="clipforge_export_{job_id}.mp4"',
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
 
 

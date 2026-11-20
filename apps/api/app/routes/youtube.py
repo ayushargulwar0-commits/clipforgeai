@@ -206,7 +206,7 @@ async def disconnect_youtube(user: dict = Depends(get_current_user)) -> dict[str
 # 2. Resumable Chunked Upload & Status Tracking
 # ===========================================================================
 
-def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Path:
+def _resolve_video_file_path(clip_id: str | None, direct_path: str | None, prefer_shorts: bool = False) -> Path:
     """Finds the video file on disk from clip_id or direct file path."""
     settings = get_settings()
 
@@ -216,11 +216,29 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
             return p
 
     if clip_id:
+        if prefer_shorts:
+            try:
+                from app.core.database import get_sqlite_clip
+                local_clip = get_sqlite_clip(clip_id)
+                if local_clip:
+                    sh_path = local_clip.get("shorts_path")
+                    if sh_path and Path(sh_path).is_file():
+                        return Path(sh_path)
+            except Exception:
+                pass
+
+        canonical = settings.storage_clips_dir / f"{clip_id}.mp4"
+        if canonical.is_file():
+            return canonical
+
         # Check SQLite DB first (instant local lookup)
         try:
             from app.core.database import get_sqlite_clip
             local_clip = get_sqlite_clip(clip_id)
             if local_clip:
+                f_path = local_clip.get("file_path")
+                if f_path and Path(f_path).is_file():
+                    return Path(f_path)
                 r_path = local_clip.get("rendered_path")
                 if r_path and Path(r_path).is_file():
                     return Path(r_path)
@@ -233,8 +251,8 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
             pass
 
         candidates = [
-            settings.storage_clips_dir / f"clip_{clip_id}.mp4",
             settings.storage_clips_dir / f"{clip_id}.mp4",
+            settings.storage_clips_dir / f"clip_{clip_id}.mp4",
             settings.storage_clips_dir / clip_id,
             settings.storage_clips_dir / f"clip_{clip_id}_rendered.mp4",
             settings.storage_clips_dir / f"clip_{clip_id}_section.mp4",
@@ -243,6 +261,14 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
         ]
         for c in candidates:
             if c.is_file():
+                # Ensure canonical file exists
+                if c != canonical and not canonical.is_file():
+                    try:
+                        import shutil
+                        shutil.copy2(c, canonical)
+                        return canonical
+                    except Exception:
+                        pass
                 return c
 
         # Check remote DB clips record
@@ -266,17 +292,6 @@ def _resolve_video_file_path(clip_id: str | None, direct_path: str | None) -> Pa
             for f in settings.storage_clips_dir.glob(f"*{clip_id}*"):
                 if f.is_file() and f.suffix.lower() == ".mp4":
                     return f
-
-    # Fallback to any rendered vertical clip in storage_clips_dir
-    if settings.storage_clips_dir.exists():
-        for f in settings.storage_clips_dir.glob("*rendered*.mp4"):
-            if f.is_file():
-                logger.info("Found fallback rendered clip in storage: %s", f.name)
-                return f
-        for f in settings.storage_clips_dir.glob("*.mp4"):
-            if f.is_file():
-                logger.info("Found fallback clip in storage: %s", f.name)
-                return f
 
     logger.error("Video file resolution failed for clip_id=%s, direct_path=%s", clip_id, direct_path)
     raise HTTPException(
@@ -308,8 +323,8 @@ async def upload_shorts(
         user_id, body.clip_id, body.file_path, body.title, body.privacy
     )
 
-    # 1. Resolve file on disk
-    file_path = _resolve_video_file_path(body.clip_id, body.file_path)
+    # 1. Resolve file on disk (prefer exported short with burned captions if present)
+    file_path = _resolve_video_file_path(body.clip_id, body.file_path, prefer_shorts=True)
     logger.info("Resolved video file path on disk: %s (size: %d bytes)", file_path, file_path.stat().st_size)
 
     # 2. Pre-validate video requirements

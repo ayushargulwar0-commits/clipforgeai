@@ -15,7 +15,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.core.config import get_settings
-from app.core.database import get_supabase
+from app.core.database import get_supabase, save_sqlite_clip
 from app.core.security import get_current_user, get_user_id
 from app.models.enums import JobType, VideoStatus
 from app.models.schemas import JobOut, MessageResponse, UploadResponse, VideoAssetOut, VideoMetadataOut
@@ -428,6 +428,10 @@ async def upload_from_url(
                 }
                 detected_clips.append(clip_item)
                 try:
+                    save_sqlite_clip(clip_item)
+                except Exception:
+                    pass
+                try:
                     client.table("clips").insert(clip_item).execute()
                 except Exception as exc:
                     logger.warning("Failed to persist clip: %s", exc)
@@ -473,12 +477,32 @@ async def upload_from_url(
                 pass
 
     # If no clips were detected (or transcription had no speech), generate default candidate slices
-    if not detected_clips and duration > 10:
-        step = min(30.0, duration / 3)
-        for i in range(min(3, int(duration // step))):
+    if not detected_clips and duration > 5:
+        from app.routes.clips import verify_video_file
+        step = min(30.0, max(5.0, duration / 3))
+        num_slices = min(3, max(1, int(duration // step)))
+        for i in range(num_slices):
             start = round(i * step, 1)
             end = round(min(start + step, duration), 1)
             c_id = str(uuid.uuid4())
+            target_clip_file = settings.storage_clips_dir / f"{c_id}.mp4"
+            is_valid = False
+            probed_dur = 0.0
+            err = None
+            try:
+                proc = VideoProcessor()
+                proc.trim_and_encode(
+                    input_path=file_path,
+                    output_path=str(target_clip_file),
+                    start=start,
+                    end=end,
+                    aspect_ratio="9:16",
+                )
+                is_valid, probed_dur, err = verify_video_file(target_clip_file)
+            except Exception as exc:
+                err = str(exc)
+
+            final_dur = probed_dur if is_valid and probed_dur > 0 else round(end - start, 1)
             c_data = {
                 "id": c_id,
                 "video_id": video_id,
@@ -489,17 +513,26 @@ async def upload_from_url(
                 "transcript_text": f"Extracted video segment from {title}",
                 "start_time": start,
                 "end_time": end,
-                "duration": round(end - start, 1),
+                "start": start,
+                "end": end,
+                "duration": final_dur,
                 "aspect_ratio": "9:16",
-                "status": "detected",
+                "status": "ready" if is_valid else "failed",
                 "score": 92 - (i * 4),
                 "score_explanation": "High visual motion and audience pacing segment.",
                 "youtube_id": youtube_id,
-                "source_url": f"/storage/videos/{Path(file_path).name}",
+                "file_path": str(target_clip_file.resolve()) if is_valid else "",
+                "rendered_path": str(target_clip_file.resolve()) if is_valid else "",
+                "source_url": f"/storage/clips/{c_id}.mp4" if is_valid else f"/storage/videos/{Path(file_path).name}",
+                "error_message": err if not is_valid else None,
                 "created_at": now,
                 "updated_at": now,
             }
             detected_clips.append(c_data)
+            try:
+                save_sqlite_clip(c_data)
+            except Exception as exc:
+                logger.warning("Failed to save clip to SQLite: %s", exc)
             try:
                 client.table("clips").insert(c_data).execute()
             except Exception:

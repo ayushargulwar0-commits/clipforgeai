@@ -82,15 +82,21 @@ class LocalStorageAdapter(BaseStorageAdapter):
         async with aiofiles.open(dest, "wb") as f:
             await f.write(data)
         logger.debug("Saved video: %s", dest)
-        # Return relative path from STORAGE_DIR root
-        return str(dest.relative_to(self.settings.STORAGE_DIR)).replace("\\", "/")
+        # Return relative path from storage root
+        try:
+            return str(dest.resolve().relative_to(self.settings.storage_resolved_dir.resolve())).replace("\\", "/")
+        except Exception:
+            return str(dest.name)
 
     async def save_clip(self, data: bytes, filename: str, user_id: str) -> str:
         dest = self._clips_dir(user_id) / filename
         async with aiofiles.open(dest, "wb") as f:
             await f.write(data)
         logger.debug("Saved clip: %s", dest)
-        return str(dest.relative_to(self.settings.STORAGE_DIR)).replace("\\", "/")
+        try:
+            return str(dest.resolve().relative_to(self.settings.storage_resolved_dir.resolve())).replace("\\", "/")
+        except Exception:
+            return str(dest.name)
 
     async def save_thumbnail(self, data: bytes, filename: str) -> str:
         dest = self._thumbnails_dir() / filename

@@ -39,6 +39,8 @@ class VideoStatus(str, Enum):
 
 
 class ClipStatus(str, Enum):
+    ready = "ready"
+    queued = "queued"
     detected = "detected"
     editing = "editing"
     rendering = "rendering"
@@ -50,3 +52,4 @@ class JobType(str, Enum):
     transcription = "transcription"
     clip_detection = "clip_detection"
     render = "render"
+    export = "export"

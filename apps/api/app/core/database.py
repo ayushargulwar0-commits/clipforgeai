@@ -74,13 +74,17 @@ async def health_check_db() -> bool:
 import sqlite3
 from pathlib import Path
 
-_SQLITE_DB_PATH = Path("storage/clipforge.db")
+def _get_sqlite_db_path() -> Path:
+    from app.core.config import get_settings
+    p = get_settings().storage_resolved_dir / "clipforge.db"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def get_sqlite_conn() -> sqlite3.Connection:
     """Returns thread-safe connection to the real relational database file."""
-    _SQLITE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_SQLITE_DB_PATH), check_same_thread=False)
+    db_path = _get_sqlite_db_path()
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -126,15 +130,23 @@ def init_local_db():
                 score REAL DEFAULT 90.0,
                 score_explanation TEXT,
                 transcript_text TEXT,
-                status TEXT NOT NULL DEFAULT 'rendered',
+                status TEXT NOT NULL DEFAULT 'queued',
+                file_path TEXT,
                 rendered_path TEXT,
+                shorts_path TEXT,
                 thumbnail_path TEXT,
                 source_url TEXT,
+                error_message TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT
             );
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_user ON clips(owner_id);")
+        for col in ("file_path", "error_message", "shorts_path"):
+            try:
+                conn.execute(f"ALTER TABLE clips ADD COLUMN {col} TEXT;")
+            except Exception:
+                pass
 
 
 def get_sqlite_clip(clip_id: str) -> dict | None:
@@ -146,6 +158,19 @@ def get_sqlite_clip(clip_id: str) -> dict | None:
     return None
 
 
+def list_sqlite_clips(owner_id: str | None = None) -> list[dict]:
+    """Retrieve all clip records from SQLite database."""
+    conn = get_sqlite_conn()
+    if owner_id and owner_id != "owner-ayush":
+        rows = conn.execute(
+            "SELECT * FROM clips WHERE owner_id = ? ORDER BY rowid DESC",
+            (owner_id,)
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM clips ORDER BY rowid DESC").fetchall()
+    return [dict(row) for row in rows]
+
+
 def save_sqlite_clip(clip: dict) -> None:
     """Insert or update clip record in SQLite database."""
     conn = get_sqlite_conn()
@@ -154,14 +179,23 @@ def save_sqlite_clip(clip: dict) -> None:
             INSERT INTO clips (
                 id, video_id, owner_id, title, description, hook,
                 start, end, duration, score, score_explanation,
-                transcript_text, status, rendered_path, thumbnail_path,
-                source_url, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                transcript_text, status, file_path, rendered_path, shorts_path, thumbnail_path,
+                source_url, error_message, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 description = excluded.description,
+                hook = excluded.hook,
+                start = excluded.start,
+                end = excluded.end,
+                duration = excluded.duration,
+                status = excluded.status,
+                file_path = excluded.file_path,
                 rendered_path = excluded.rendered_path,
+                shorts_path = excluded.shorts_path,
+                thumbnail_path = excluded.thumbnail_path,
                 source_url = excluded.source_url,
+                error_message = excluded.error_message,
                 updated_at = excluded.updated_at
         """, (
             clip["id"],
@@ -176,10 +210,13 @@ def save_sqlite_clip(clip: dict) -> None:
             float(clip.get("score", 90.0)),
             clip.get("score_explanation", ""),
             clip.get("transcript_text", ""),
-            clip.get("status", "rendered"),
+            clip.get("status", "queued"),
+            clip.get("file_path", ""),
             clip.get("rendered_path", ""),
+            clip.get("shorts_path", ""),
             clip.get("thumbnail_path", ""),
             clip.get("source_url", ""),
+            clip.get("error_message", None),
             clip.get("created_at", datetime.now(timezone.utc).isoformat()),
             clip.get("updated_at", datetime.now(timezone.utc).isoformat()),
         ))

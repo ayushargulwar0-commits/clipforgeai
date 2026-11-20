@@ -214,6 +214,12 @@ class Settings(BaseSettings):
     def storage_audio_dir(self) -> Path:
         return self.storage_resolved_dir / "audio"
 
+    @property
+    def storage_exports_dir(self) -> Path:
+        p = self.storage_resolved_dir / "exports"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

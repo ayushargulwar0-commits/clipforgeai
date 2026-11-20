@@ -180,8 +180,9 @@ def create_app() -> FastAPI:
     # -------------------------------------------------------------------
     from fastapi.staticfiles import StaticFiles
 
-    settings.STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-    app.mount("/storage", StaticFiles(directory=str(settings.STORAGE_DIR)), name="storage")
+    storage_dir = settings.storage_resolved_dir
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/storage", StaticFiles(directory=str(storage_dir)), name="storage")
 
     return app
 

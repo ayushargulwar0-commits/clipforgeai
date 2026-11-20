@@ -464,7 +464,15 @@ def _run_autoclip_job(
                 "transcript": pick["transcript"],
             })
 
-        # Step 6: Mark done
+        # Step 6: Delete source video after cutting all clips
+        try:
+            if source_video.exists():
+                source_video.unlink()
+                logger.info("[%s] Deleted source video after cutting clips.", job_id)
+        except Exception as e:
+            logger.warning("[%s] Could not delete source video: %s", job_id, e)
+
+        # Step 7: Mark done
         _update_job(job_id, status="done", progress=100, clips=output_clips)
         logger.info("[%s] AutoClip Phase 3 job finished: %d 9:16 shorts ready!", job_id, len(output_clips))
 

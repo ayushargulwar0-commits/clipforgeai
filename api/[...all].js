@@ -33,9 +33,11 @@ module.exports = (req, res) => {
     });
   }
 
-  // Video streaming endpoint: redirect to bundled sample MP4
+  // Video streaming endpoint: Do not redirect to sample MP4. Requires direct backend.
   if (url.includes('/stream')) {
-    return res.redirect(302, '/sample-clip.mp4');
+    return res.status(404).json({
+      error: 'Direct backend API required. Set VITE_API_BASE_URL on Vercel to your deployed backend API URL.',
+    });
   }
 
   // Render export endpoint

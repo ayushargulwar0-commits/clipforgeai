@@ -41,8 +41,11 @@ import {
   Video,
   FileVideo,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react'
-import api from '@/lib/api'
+import api, { API_BASE_URL } from '@/lib/api'
+import { YouTubePublishModal } from '@/components/youtube/YouTubePublishModal'
+import { Youtube } from '@/components/ui/Icons'
 
 // ---------------------------------------------------------------------------
 // Types & Schema (Phase 6C Version 1)
@@ -301,8 +304,6 @@ const DEFAULT_EDIT_JSON: EditJson = {
   },
 }
 
-const SAMPLE_HORIZONTAL_VIDEO = '/sample-clip.mp4'
-
 const extractYtId = (url: string) => {
   if (!url) return null
   const match = url.match(/(?:v=|\/|youtu\.be\/|embed\/)([0-9A-Za-z_-]{11})/)
@@ -324,84 +325,41 @@ export interface PresetClip {
   youtube_id?: string
 }
 
-export const ALL_PRESET_CLIPS: PresetClip[] = [
-  {
-    id: 'yt-clip-1794763864649-1',
-    title: 'The Hardest Truth About Scaling to $10M ARR (Short)',
-    description: 'Founder breaks down why initial product-market fit does not guarantee scale.',
-    hook: 'Nobody tells you this about scaling...',
-    transcript_text: 'The hardest truth about scaling past ten million is that everything that got you there completely breaks down.',
-    start_time: 142.5,
-    end_time: 178.0,
-    duration: 35.5,
-    aspect_ratio: '9:16',
-    youtube_id: '1laZgpd69Z0',
-    video_url: 'https://www.youtube.com/watch?v=1laZgpd69Z0',
-    thumbnail_url: 'https://img.youtube.com/vi/1laZgpd69Z0/hqdefault.jpg',
-  },
-  {
-    id: 'clip-1',
-    title: 'The Hardest Truth About Scaling to $10M ARR',
-    description: 'Founder breaks down why initial product-market fit does not guarantee scale.',
-    hook: 'Nobody tells you this about scaling...',
-    transcript_text: 'The hardest truth about scaling past ten million is that everything that got you there completely breaks down. Your first ten hires won’t be the ones who can run a thousand-person org.',
-    start_time: 142.5,
-    end_time: 178.0,
-    duration: 35.5,
-    aspect_ratio: '9:16',
-    youtube_id: '1laZgpd69Z0',
-    video_url: 'https://www.youtube.com/watch?v=1laZgpd69Z0',
-    thumbnail_url: 'https://img.youtube.com/vi/1laZgpd69Z0/hqdefault.jpg',
-  },
-  {
-    id: 'clip-2',
-    title: 'Why 99% of Startups Pick the Wrong Tech Stack',
-    description: 'Engineering lead explains common microservices pitfalls for early teams.',
-    hook: 'Do not build microservices on day one.',
-    transcript_text: 'If you start with Kubernetes and microservices before you have ten paying customers, you are burning your runway on vanity engineering. Build a monolith until it hurts.',
-    start_time: 410.0,
-    end_time: 442.2,
-    duration: 32.2,
-    aspect_ratio: '9:16',
-    youtube_id: 'dQw4w9WgXcQ',
-    video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-    thumbnail_url: 'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
-  },
-  {
-    id: 'clip-3',
-    title: 'One Rule That Boosted Our Organic TikTok Reach',
-    description: 'Growth marketer shares the 3-second retention framework.',
-    hook: 'The 3-second hook framework revealed.',
-    transcript_text: 'If you do not visually disrupt the feed in the first three seconds, your script does not matter. Use kinetic motion and text overlay immediately.',
-    start_time: 730.0,
-    end_time: 758.5,
-    duration: 28.5,
-    aspect_ratio: '9:16',
-    youtube_id: 'jNQXAC9IVRw',
-    video_url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
-    thumbnail_url: 'https://img.youtube.com/vi/jNQXAC9IVRw/hqdefault.jpg',
-  },
-]
+export const ALL_PRESET_CLIPS: PresetClip[] = []
 
-const DEFAULT_TIMELINE_THUMBNAILS = Array.from(
-  { length: 8 },
-  (_, i) => `/thumbnails/yt-clip-1794763864649-1_thumb_${i}.jpg`
-)
+const DEFAULT_TIMELINE_THUMBNAILS: string[] = []
 
 export default function Editor() {
   const { clipId: routeClipId } = useParams<{ clipId?: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { success, error: toastError } = useToast()
+  const { success, error: toastError, info } = useToast()
 
-  const clipId = routeClipId || searchParams.get('clip') || 'yt-clip-1794763864649-1'
+  const clipId = routeClipId || searchParams.get('clip') || ''
+  const isDebug = searchParams.get('debug') === '1'
+  const [debugInfo, setDebugInfo] = useState<{
+    filePath?: string
+    fileSize?: number
+    fileMd5Prefix?: string
+  }>({})
 
   // Clip Switcher & Source Video State
-  const [availableClips, setAvailableClips] = useState<any[]>(ALL_PRESET_CLIPS)
+  const [availableClips, setAvailableClips] = useState<any[]>([])
   const [showClipDropdown, setShowClipDropdown] = useState(false)
   const clipDropdownRef = useRef<HTMLDivElement>(null)
   const customVideoInputRef = useRef<HTMLInputElement>(null)
   const [customUrlInput, setCustomUrlInput] = useState('')
+
+  // Load user clips from backend API strictly
+  useEffect(() => {
+    let unmounted = false
+    api.get('/clips').then((res) => {
+      if (!unmounted && Array.isArray(res.data)) {
+        setAvailableClips(res.data)
+      }
+    }).catch(() => {})
+    return () => { unmounted = true }
+  }, [])
 
   // Outside click listener for clip dropdown
   useEffect(() => {
@@ -416,55 +374,137 @@ export default function Editor() {
 
   const [youtubeId, setYoutubeId] = useState<string | null>(null)
 
+  // Real Streaming & Ingestion Status
+  const [clipStatus, setClipStatus] = useState<'loading' | 'queued' | 'downloading' | 'rendering' | 'ready' | 'failed'>('loading')
+  const [clipStatusProgress, setClipStatusProgress] = useState<number>(0)
+  const [clipStatusError, setClipStatusError] = useState<string | null>(null)
+  const [streamWarning, setStreamWarning] = useState<string | null>(null)
+  const [hasStreamErrorRetried, setHasStreamErrorRetried] = useState<boolean>(false)
+  const [isRetrying, setIsRetrying] = useState<boolean>(false)
+  const [isUploadingSource, setIsUploadingSource] = useState<boolean>(false)
+  const [uploadProgress, setUploadProgress] = useState<number>(0)
+  const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false)
+  const sourceUploadInputRef = useRef<HTMLInputElement>(null)
+
+  const fetchStreamTokenAndPlay = useCallback(
+    async (cId: string, forceFresh = false, signal?: AbortSignal) => {
+      try {
+        const res = await api.post(`/clips/${cId}/stream-token`, {}, { signal })
+        const token = res.data.token
+        const baseUrl = API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : '')
+        const streamUrl = `${baseUrl}/api/clips/${cId}/stream?token=${encodeURIComponent(token)}&clip=${encodeURIComponent(cId)}&v=${Date.now()}`
+        setVideoUrl(streamUrl)
+        setVideoError(null)
+        setStreamWarning(null)
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.load()
+          }
+        }, 20)
+        return streamUrl
+      } catch (err: any) {
+        if (err.name === 'CanceledError' || err.name === 'AbortError') {
+          return null
+        }
+        console.warn('[Editor] Failed to fetch stream token:', err)
+        setStreamWarning('Stream playback interrupted. Refreshing stream token...')
+        return null
+      }
+    },
+    []
+  )
+
+  const handleRetryRender = useCallback(async () => {
+    setIsRetrying(true)
+    info('Retrying Processing', 'Re-queueing clip rendering...')
+    try {
+      await api.post(`/clips/${clipId}/retry`)
+      setClipStatus('rendering')
+      setClipStatusError(null)
+      setStreamWarning(null)
+      success('Re-queued', 'Processing has been restarted.')
+    } catch (err: any) {
+      toastError('Retry Failed', err.response?.data?.detail || 'Could not restart processing.')
+    } finally {
+      setIsRetrying(false)
+    }
+  }, [clipId, info, success, toastError])
+
+  const handleSourceFileUpload = useCallback(
+    async (file: File) => {
+      if (!file) return
+
+      // Max size 500 MB
+      if (file.size > 500 * 1024 * 1024) {
+        toastError('File Too Large', 'Maximum allowed upload size is 500 MB.')
+        return
+      }
+
+      // Check file type
+      const validExts = ['.mp4', '.mov', '.webm', '.mkv']
+      const fileExt = '.' + file.name.split('.').pop()?.toLowerCase()
+      if (!validExts.includes(fileExt) && !file.type.startsWith('video/')) {
+        toastError('Unsupported File', 'Please upload an MP4, MOV, or WebM video file.')
+        return
+      }
+
+      setIsUploadingSource(true)
+      setUploadProgress(10)
+      info('Uploading Source Video', `Uploading "${file.name}" (re-encoding to standard H.264/AAC)...`)
+
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+
+        await api.post(`/clips/${clipId}/source`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const pct = Math.round((progressEvent.loaded * 90) / progressEvent.total)
+              setUploadProgress(pct)
+            }
+          },
+        })
+
+        setUploadProgress(100)
+        success('Source Replaced!', 'Video re-encoded and applied successfully.')
+        setClipStatus('ready')
+        setClipStatusError(null)
+        setStreamWarning(null)
+
+        // Refresh stream token and play
+        await fetchStreamTokenAndPlay(clipId, true)
+      } catch (err: any) {
+        console.error('[Editor] Upload source error:', err)
+        const detail = err.response?.data?.detail || err.message || 'Failed to upload source video.'
+        toastError('Upload Failed', detail)
+      } finally {
+        setIsUploadingSource(false)
+        setUploadProgress(0)
+      }
+    },
+    [clipId, fetchStreamTokenAndPlay, info, success, toastError]
+  )
+
   const handleCustomVideoUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (!file) return
-      const objectUrl = URL.createObjectURL(file)
-      setYoutubeId(null)
-      setVideoUrl(objectUrl)
-      setVideoError(null)
-      const cleanName = file.name.replace(/\.[^/.]+$/, '')
-      setClipTitle(cleanName)
-
-      setAvailableClips((prev) => {
-        const updated = prev.map((c) => (c.id === clipId ? { ...c, title: cleanName, video_url: objectUrl, youtube_id: undefined } : c))
-        try {
-          localStorage.setItem('cf_user_clips', JSON.stringify(updated))
-        } catch (_) {}
-        return updated
-      })
-
-      success('Video Loaded', `Loaded "${file.name}" into editor.`)
+      handleSourceFileUpload(file)
     },
-    [clipId, success]
+    [handleSourceFileUpload]
   )
 
-  const handleCustomUrlApply = useCallback(() => {
+  const handleCustomUrlApply = useCallback(async () => {
     if (!customUrlInput.trim()) return
     const newUrl = customUrlInput.trim()
-    const yt = extractYtId(newUrl)
-    if (yt) {
-      setYoutubeId(yt)
-      setThumbnails([`https://img.youtube.com/vi/${yt}/hqdefault.jpg`])
-      setVideoUrl(SAMPLE_HORIZONTAL_VIDEO)
-    } else {
-      setYoutubeId(null)
-      setVideoUrl(newUrl)
-    }
+    setVideoUrl(newUrl)
     setVideoError(null)
-
-    setAvailableClips((prev) => {
-      const updated = prev.map((c) => (c.id === clipId ? { ...c, video_url: newUrl, youtube_id: yt || undefined } : c))
-      try {
-        localStorage.setItem('cf_user_clips', JSON.stringify(updated))
-      } catch (_) {}
-      return updated
-    })
-
-    success('Video URL Applied', 'Loaded video source.')
     setCustomUrlInput('')
-  }, [clipId, customUrlInput, success])
+    success('Video URL Loaded', 'Video source applied.')
+  }, [customUrlInput, success])
 
   // If no route clipId provided, redirect to user's first clip or to My Clips
   useEffect(() => {
@@ -502,6 +542,11 @@ export default function Editor() {
   const [activeTab, setActiveTab] = useState<'framing' | 'text' | 'audio' | 'media'>('framing')
   const [isSaving, setIsSaving] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState(0)
+  const [exportStatus, setExportStatus] = useState<'idle' | 'exporting' | 'completed' | 'failed'>('idle')
+  const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [isYouTubePublishOpen, setIsYouTubePublishOpen] = useState(false)
   const [isAutoFraming, setIsAutoFraming] = useState(false)
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [showSafeZoneOverlay, setShowSafeZoneOverlay] = useState(true)
@@ -604,103 +649,175 @@ export default function Editor() {
     }
   }, [])
 
-  const handleVideoError = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const vid = e.currentTarget
-    console.warn('[Editor] Video stream warning, using bundled sample:', vid.src)
-    if (vid.src && !vid.src.includes('sample-clip.mp4') && !vid.src.includes('sample-clip-9-16.mp4')) {
-      setVideoUrl(SAMPLE_HORIZONTAL_VIDEO)
-    }
-    setVideoError(null)
-  }, [])
+  const handleVideoError = useCallback(
+    async (e: React.SyntheticEvent<HTMLVideoElement>) => {
+      const vid = e.currentTarget
+      console.warn('[Editor] Video stream warning:', vid.error?.message, vid.src)
+      if (!hasStreamErrorRetried) {
+        setHasStreamErrorRetried(true)
+        console.log('[Editor] Retrying stream with fresh token...')
+        await fetchStreamTokenAndPlay(clipId, true)
+      } else {
+        setStreamWarning('Stream playback interrupted. Video stream temporarily unavailable.')
+      }
+      setVideoError(null)
+    },
+    [clipId, fetchStreamTokenAndPlay, hasStreamErrorRetried]
+  )
 
   // -------------------------------------------------------------------------
-  // 1. Data Loading: GET /clips/{id}/edit & Dynamic Clip Data
+  // 1. Data Loading: GET /clips/{id}/edit & Dynamic Clip Data with AbortController
   // -------------------------------------------------------------------------
   useEffect(() => {
-    let isMounted = true
+    const controller = new AbortController()
+    const signal = controller.signal
+    let pollTimer: any = null
+
+    // Reset all clip-specific state immediately when clipId changes
+    setVideoUrl('')
+    setCurrentTime(0)
+    setIsPlaying(false)
+    setVideoError(null)
+    setStreamWarning(null)
+    setClipStatus('loading')
+    setClipStatusProgress(0)
+    setClipStatusError(null)
+    setExportStatus('idle')
+    setExportProgress(0)
+    setExportDownloadUrl(null)
+    setExportError(null)
 
     async function loadClipData() {
       try {
-        // Load all available clips combining localStorage and presets
-        let allClips: any[] = ALL_PRESET_CLIPS
+        if (!clipId) {
+          setClipStatus('failed')
+          setClipStatusError('No clip ID specified. Please choose a clip from My Clips.')
+          return
+        }
+
+        // Direct Stream & Status Resolution strictly from backend
+        let stData: any = null
         try {
-          const saved = localStorage.getItem('cf_user_clips')
-          if (saved) {
-            const parsed = JSON.parse(saved)
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const ids = new Set(parsed.map((c: any) => c.id))
-              allClips = [...parsed, ...ALL_PRESET_CLIPS.filter((p) => !ids.has(p.id))]
-            }
-          }
-        } catch (_) {}
+          const statusRes = await api.get(`/clips/${clipId}/status`, { signal })
+          stData = statusRes.data
+        } catch (stErr: any) {
+          if (signal.aborted) return
+          const detail = stErr.response?.data?.detail || stErr.message || 'Clip not found'
+          setClipStatus('failed')
+          setClipStatusError(
+            clipId.startsWith('yt-clip-') || detail.toLowerCase().includes('not found')
+              ? `Clip "${clipId}" not found in database. Needs re-import.`
+              : detail
+          )
+          return
+        }
 
-        if (isMounted) setAvailableClips(allClips)
+        if (!stData) {
+          setClipStatus('failed')
+          setClipStatusError(`Clip "${clipId}" not found in database. Needs re-import.`)
+          return
+        }
 
-        const activeClip = allClips.find((c: any) => c.id === clipId) || null
-        const title = activeClip?.title || (clipId.startsWith('yt-clip-') ? 'YouTube Viral Short' : 'My Short Clip')
-        if (isMounted) setClipTitle(title)
+        // Set debug strip info
+        setDebugInfo({
+          filePath: stData.file_path || '',
+          fileSize: stData.file_size || 0,
+          fileMd5Prefix: stData.file_md5_prefix || (stData.file_md5 ? stData.file_md5.slice(0, 8) : ''),
+        })
 
-        const yId = activeClip?.youtube_id || extractYtId(activeClip?.video_url || '') || null
-        if (isMounted) setYoutubeId(yId)
+        const title = stData.title || (clipId.startsWith('yt-clip-') ? 'YouTube Viral Short' : `Clip ${clipId}`)
+        setClipTitle(title)
 
-        if (activeClip?.thumbnail_url && isMounted) {
-          setThumbnails([activeClip.thumbnail_url])
-        } else if (yId && isMounted) {
+        const yId = stData.youtube_id || extractYtId(stData.video_url || '') || null
+        setYoutubeId(yId)
+
+        if (stData.thumbnail_url) {
+          setThumbnails([stData.thumbnail_url])
+        } else if (yId) {
           setThumbnails([`https://img.youtube.com/vi/${yId}/hqdefault.jpg`])
         }
 
-        // Set video source URL: HTML5 <video> requires direct media, not YouTube links
-        let streamUrl = activeClip?.video_url || SAMPLE_HORIZONTAL_VIDEO
-        if (
-          !streamUrl ||
-          streamUrl.includes('youtube.com') ||
-          streamUrl.includes('youtu.be') ||
-          streamUrl.includes('commondatastorage')
-        ) {
-          streamUrl = SAMPLE_HORIZONTAL_VIDEO
-        }
-        if (isMounted) {
-          setVideoUrl(streamUrl)
+        const curStatus = stData.status || 'queued'
+        setClipStatus(curStatus)
+        setClipStatusProgress(stData.progress || 0)
+        if (stData.error_message) {
+          setClipStatusError(stData.error_message)
         }
 
-        // Check for existing custom edits in localStorage for this specific clip
-        const localEditKey = `clipforge_edit_${clipId}`
-        const cached = localStorage.getItem(localEditKey)
-        if (cached && isMounted) {
-          try {
-            const parsed = JSON.parse(cached)
-            setEditJson(parsed)
-            setHistory([parsed])
+        if (curStatus === 'ready') {
+          await fetchStreamTokenAndPlay(clipId, true, signal)
+        } else if (curStatus === 'failed') {
+          setClipStatusError(stData.error_message || 'Video processing failed. Needs re-import.')
+        } else {
+          // Poll status every 3 seconds until ready or failed
+          pollTimer = setInterval(async () => {
+            if (signal.aborted) return
+            try {
+              const pRes = await api.get(`/clips/${clipId}/status`, { signal })
+              const pData = pRes.data
+              const pStatus = pData.status || 'queued'
+              setClipStatus(pStatus)
+              setClipStatusProgress(pData.progress || 0)
+              if (pData.file_path || pData.file_size || pData.file_md5_prefix) {
+                setDebugInfo({
+                  filePath: pData.file_path || '',
+                  fileSize: pData.file_size || 0,
+                  fileMd5Prefix: pData.file_md5_prefix || (pData.file_md5 ? pData.file_md5.slice(0, 8) : ''),
+                })
+              }
+              if (pStatus === 'ready') {
+                clearInterval(pollTimer)
+                await fetchStreamTokenAndPlay(clipId, true, signal)
+              } else if (pStatus === 'failed') {
+                clearInterval(pollTimer)
+                setClipStatusError(pData.error_message || 'Video processing failed. Needs re-import.')
+              }
+            } catch (pErr) {
+              console.warn('[Editor] Status poll warning:', pErr)
+            }
+          }, 3000)
+        }
+
+        if (signal.aborted) return
+
+        // Fetch clip edit state from API
+        try {
+          const editRes = await api.get(`/clips/${clipId}/edit`, { signal })
+          if (editRes.data?.edit_json && Object.keys(editRes.data.edit_json).length > 0) {
+            const ed = editRes.data.edit_json
+            setEditJson(ed)
+            setHistory([ed])
             setHistoryIdx(0)
             setHasUnsaved(false)
-            if (parsed.trim?.in !== undefined && videoRef.current) {
-              videoRef.current.currentTime = parsed.trim.in
-              setCurrentTime(parsed.trim.in)
+            if (ed.trim?.in !== undefined && videoRef.current) {
+              videoRef.current.currentTime = ed.trim.in
+              setCurrentTime(ed.trim.in)
             }
-            if (parsed.trim?.out !== undefined) {
-              setDuration(Math.max(1, parsed.trim.out - (parsed.trim.in || 0)))
+            if (ed.trim?.out !== undefined) {
+              setDuration(Math.max(1, ed.trim.out - (ed.trim.in || 0)))
             }
             return
-          } catch (_) {}
-        }
+          }
+        } catch (_) {}
 
-        // Construct dynamic clip-specific Edit JSON!
-        const targetIn = typeof activeClip?.start_time === 'number' ? activeClip.start_time : 0
+        if (signal.aborted) return
+
+        // Construct dynamic clip-specific Edit JSON
+        const targetIn = typeof stData?.start_time === 'number' ? stData.start_time : 0
         const targetOut =
-          typeof activeClip?.end_time === 'number' && activeClip.end_time > targetIn
-            ? activeClip.end_time
-            : targetIn + (activeClip?.duration || 30)
-        const clipAspect = (activeClip?.aspect_ratio as AspectRatio) || '9:16'
+          typeof stData?.end_time === 'number' && stData.end_time > targetIn
+            ? stData.end_time
+            : targetIn + (stData?.duration || 30)
+        const clipAspect = (stData?.aspect_ratio as AspectRatio) || '9:16'
         const clipDuration =
-          typeof activeClip?.duration === 'number' && activeClip.duration > 0
-            ? activeClip.duration
+          typeof stData?.duration === 'number' && stData.duration > 0
+            ? stData.duration
             : Math.max(1, targetOut - targetIn)
 
-        // Dynamic timed caption words from clip transcript_text or hook!
         const transcriptText =
-          activeClip?.transcript_text ||
-          activeClip?.hook ||
-          'Stop scrolling right now. This secret changes everything.'
+          stData?.transcript_text ||
+          stData?.hook ||
+          `Highlight for clip ${clipId}`
         const wordsList = transcriptText.split(/\s+/).filter(Boolean)
         const totalDuration = Math.max(1, targetOut - targetIn)
         const wordStep = totalDuration / Math.max(1, wordsList.length)
@@ -720,27 +837,28 @@ export default function Editor() {
           },
         }
 
-        if (isMounted) {
-          setDuration(clipDuration)
-          setEditJson(dynamicEdit)
-          setHistory([dynamicEdit])
-          setHistoryIdx(0)
-          setHasUnsaved(false)
-          if (videoRef.current) {
-            videoRef.current.currentTime = targetIn
-            setCurrentTime(targetIn)
-          }
+        setDuration(clipDuration)
+        setEditJson(dynamicEdit)
+        setHistory([dynamicEdit])
+        setHistoryIdx(0)
+        setHasUnsaved(false)
+        if (videoRef.current) {
+          videoRef.current.currentTime = targetIn
+          setCurrentTime(targetIn)
         }
       } catch (err: any) {
-        console.warn('[Editor] Failed to load clip data:', err.message)
+        if (!signal.aborted) {
+          console.warn('[Editor] Failed to load clip data:', err.message)
+        }
       }
     }
 
     loadClipData()
     return () => {
-      isMounted = false
+      controller.abort()
+      if (pollTimer) clearInterval(pollTimer)
     }
-  }, [clipId])
+  }, [clipId, fetchStreamTokenAndPlay])
 
   // -------------------------------------------------------------------------
   // 2. Save API: PUT /clips/{id}/edit
@@ -770,91 +888,91 @@ export default function Editor() {
   )
 
   // -------------------------------------------------------------------------
-  // 2b. Export Video: POST /clips/selective-render & Download File
+  // 2b. Export Video: POST /api/clips/{id}/export & Background Job Polling
   // -------------------------------------------------------------------------
   const handleExport = useCallback(async () => {
     setIsExporting(true)
+    setExportStatus('exporting')
+    setExportProgress(10)
+    setExportError(null)
+
     try {
+      // 1. Save edit settings to database first
       await saveChanges(false)
+      setExportProgress(20)
 
-      const renderPayload = {
-        clip_id: clipId,
-        video_url: videoUrl || '/sample-clip.mp4',
-        start_time: editJson.trim.in,
-        end_time: editJson.trim.out,
-        aspect_ratio: editJson.aspect || '9:16',
-        caption_text: editJson.captions.words.map((w) => w.text).join(' '),
-        caption_style: editJson.captions.style,
-        zoom: editJson.framing.crop.w > 0 ? 1 / editJson.framing.crop.w : 1,
-        position_x: editJson.framing.crop.x,
-        position_y: editJson.framing.crop.y,
-        include_outro: Boolean(editJson.outro?.enabled),
+      // 2. Start background export job
+      const res = await api.post(`/clips/${clipId}/export`)
+      const jobId = res?.data?.job_id
+      if (!jobId) {
+        throw new Error('No job ID returned from export endpoint.')
       }
 
-      let exportDownloadUrl = ''
-      try {
-        const renderRes = await api.post('/clips/selective-render', renderPayload)
-        if (renderRes?.data?.output_url) {
-          exportDownloadUrl = renderRes.data.output_url
+      setExportProgress(30)
+
+      // 3. Poll /api/exports/{job_id} until completed or failed
+      let isDone = false
+      let pollCount = 0
+
+      while (!isDone && pollCount < 120) {
+        await new Promise((r) => setTimeout(r, 1500))
+        pollCount++
+
+        try {
+          const statusRes = await api.get(`/exports/${jobId}`)
+          const data = statusRes.data
+          if (data.progress !== undefined) {
+            setExportProgress(data.progress)
+          }
+
+          if (data.status === 'completed') {
+            isDone = true
+            setExportProgress(100)
+            setExportStatus('completed')
+            const directUrl = data.download_url?.startsWith('http')
+              ? data.download_url
+              : `${API_BASE_URL}${data.download_url}`
+            setExportDownloadUrl(directUrl)
+            success('Export Ready!', 'Your 9:16 Short is rendered with burned captions.')
+            break
+          } else if (data.status === 'failed') {
+            throw new Error(data.error || 'Export rendering failed.')
+          }
+        } catch (pollErr: any) {
+          if (pollErr.message && pollErr.message.includes('Export rendering failed')) {
+            throw pollErr
+          }
+          console.warn('[Editor] Poll status warning:', pollErr)
         }
-      } catch (renderErr) {
-        console.warn('[Editor] Selective render API error, falling back to direct video stream/sample:', renderErr)
       }
 
-      const targetAspect = editJson.aspect || '9:16'
-      if (!exportDownloadUrl || exportDownloadUrl === '/sample-clip.mp4' || exportDownloadUrl === SAMPLE_HORIZONTAL_VIDEO) {
-        if (targetAspect === '1:1') {
-          exportDownloadUrl = '/sample-clip-1-1.mp4'
-        } else if (targetAspect === '4:5') {
-          exportDownloadUrl = '/sample-clip-4-5.mp4'
-        } else {
-          exportDownloadUrl = '/sample-clip-9-16.mp4'
-        }
+      if (!isDone) {
+        throw new Error('Export timed out. Please try again.')
       }
-
-      const safeTitle = (clipTitle || 'clipforge-render').replace(/[^a-zA-Z0-9_-]/g, '_')
-      const exportFilename = `${safeTitle}_${targetAspect.replace(':', 'x')}.mp4`
-
-      // Fetch file as blob for native browser download
-      try {
-        const res = await fetch(exportDownloadUrl)
-        if (res.ok) {
-          const blob = await res.blob()
-          const blobUrl = window.URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = blobUrl
-          a.download = exportFilename
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
-          setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000)
-        } else {
-          const a = document.createElement('a')
-          a.href = exportDownloadUrl
-          a.download = exportFilename
-          a.target = '_blank'
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
-        }
-      } catch {
-        const a = document.createElement('a')
-        a.href = exportDownloadUrl
-        a.download = exportFilename
-        a.target = '_blank'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-      }
-
-      success('Export Completed', `Successfully exported ${exportFilename}`)
     } catch (err: any) {
       console.error('[Editor] Export failed:', err)
-      toastError('Export Failed', err.message || 'Could not export video.')
+      const msg = err.response?.data?.detail || err.message || 'Export failed.'
+      setExportStatus('failed')
+      setExportError(msg)
+      toastError('Export Failed', msg)
     } finally {
       setIsExporting(false)
     }
-  }, [clipId, videoUrl, editJson, clipTitle, saveChanges, success, toastError])
+  }, [clipId, saveChanges, success, toastError])
+
+  const handleDownload = useCallback(() => {
+    if (!exportDownloadUrl) return
+    const safeTitle = (clipTitle || 'clipforge-render').replace(/[^a-zA-Z0-9_-]/g, '_')
+    const filename = `${safeTitle}_9x16.mp4`
+
+    const a = document.createElement('a')
+    a.href = exportDownloadUrl
+    a.download = filename
+    a.target = '_blank'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }, [exportDownloadUrl, clipTitle])
 
   // -------------------------------------------------------------------------
   // 3. Autosave (Debounced 2 seconds)
@@ -1488,17 +1606,97 @@ export default function Editor() {
             Save
           </Button>
 
-          <Button
-            size="sm"
-            onClick={handleExport}
-            disabled={isExporting}
-            className="gap-1.5 bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs"
-          >
-            {isExporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            {isExporting ? 'Exporting...' : 'Export'}
-          </Button>
+          {exportStatus === 'completed' && exportDownloadUrl ? (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={handleDownload}
+                className="gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm"
+              >
+                <Download size={14} /> Download MP4
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setIsYouTubePublishOpen(true)}
+                className="gap-1.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-sm"
+              >
+                <Youtube size={14} /> Upload to YouTube
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExport}
+                disabled={isExporting}
+                className="gap-1 text-xs text-slate-300 border-slate-700 hover:bg-slate-800"
+              >
+                <Sparkles size={13} /> Re-Export
+              </Button>
+            </div>
+          ) : exportStatus === 'exporting' || isExporting ? (
+            <Button
+              size="sm"
+              disabled
+              className="gap-1.5 bg-brand-600/80 text-white font-bold text-xs cursor-wait"
+            >
+              <Loader2 size={14} className="animate-spin" />
+              Exporting {exportProgress}%
+            </Button>
+          ) : exportStatus === 'failed' ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-rose-400 font-medium max-w-[200px] truncate" title={exportError || ''}>
+                {exportError || 'Failed'}
+              </span>
+              <Button
+                size="sm"
+                onClick={handleExport}
+                className="gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs"
+              >
+                <RefreshCw size={14} /> Retry Export
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              onClick={handleExport}
+              disabled={isExporting}
+              className="gap-1.5 bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs shadow-sm"
+            >
+              <Download size={14} />
+              Export
+            </Button>
+          )}
         </div>
       </header>
+
+      {/* Debug Strip (?debug=1) */}
+      {isDebug && (
+        <div
+          id="editor-debug-strip"
+          className="bg-amber-950/95 border-b border-amber-600/60 text-amber-200 text-xs px-4 py-1.5 flex flex-wrap gap-x-4 gap-y-1 font-mono items-center z-30 shrink-0"
+        >
+          <span className="font-bold text-amber-300 bg-amber-900/80 px-1.5 py-0.5 rounded border border-amber-600/50">
+            DEBUG
+          </span>
+          <span>
+            <strong>clipId:</strong> <span className="text-white">{clipId || 'none'}</span>
+          </span>
+          <span>
+            <strong>DB file_path:</strong> <span className="text-white truncate max-w-xs">{debugInfo.filePath || 'None'}</span>
+          </span>
+          <span>
+            <strong>file size:</strong> <span className="text-white">{debugInfo.fileSize ? `${debugInfo.fileSize} B` : '0 B'}</span>
+          </span>
+          <span>
+            <strong>md5:</strong> <span className="text-white">{debugInfo.fileMd5Prefix || 'None'}</span>
+          </span>
+          <span>
+            <strong>video.currentSrc:</strong> <span className="text-white truncate max-w-xs inline-block align-bottom">{videoRef.current?.currentSrc || videoUrl || 'None'}</span>
+          </span>
+          <span>
+            <strong>video.duration:</strong> <span className="text-white">{videoRef.current?.duration ? `${videoRef.current.duration.toFixed(2)}s` : `${duration.toFixed(2)}s`}</span>
+          </span>
+        </div>
+      )}
 
       {/* ===================================================================== */}
       {/* MAIN BODY: Center Preview + Right Tabs Panel                          */}
@@ -1530,11 +1728,96 @@ export default function Editor() {
                 : 'w-[360px] h-[450px]'
             }`}
           >
+            {/* Stream Warning Notice (Non-blocking, controls stay interactive) */}
+            {streamWarning && (
+              <div className="absolute top-2 inset-x-2 z-40 bg-amber-500/20 border border-amber-500/40 text-amber-200 text-[10px] px-2.5 py-1.5 rounded-lg flex items-center justify-between backdrop-blur-md">
+                <span className="truncate">{streamWarning}</span>
+                <button
+                  onClick={() => setStreamWarning(null)}
+                  className="text-amber-300 hover:text-white ml-1.5 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Preparation / Ingestion / Failed Overlay */}
+            {clipStatus !== 'ready' && (
+              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center p-5 text-center bg-slate-950/95 backdrop-blur-sm">
+                {clipStatus === 'failed' ? (
+                  <div className="flex flex-col items-center max-w-[240px]">
+                    <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 mb-3">
+                      <AlertTriangle size={22} />
+                    </div>
+                    <h3 className="text-xs font-bold text-white mb-1">Clip Preparation Error</h3>
+                    <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
+                      {clipStatusError || 'The video clip file could not be generated or found.'}
+                    </p>
+                    <div className="flex flex-col gap-2 w-full">
+                      <Button
+                        size="xs"
+                        variant="brand"
+                        onClick={handleRetryRender}
+                        disabled={isRetrying}
+                        className="w-full gap-1.5 text-xs py-2"
+                      >
+                        {isRetrying ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                        Retry
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => sourceUploadInputRef.current?.click()}
+                        className="w-full gap-1.5 text-xs py-2 border-slate-700 hover:bg-slate-800"
+                      >
+                        <Upload size={12} />
+                        Upload MP4 instead
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => navigate('/dashboard/clips')}
+                        className="w-full text-xs py-1.5 text-slate-400 hover:text-white"
+                      >
+                        Back to My Clips
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center max-w-[240px]">
+                    <div className="relative mb-3.5">
+                      <div className="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
+                        <Film size={22} />
+                      </div>
+                      <Loader2 size={20} className="animate-spin text-brand-400 absolute -top-1 -right-1" />
+                    </div>
+                    <h3 className="text-xs font-bold text-white mb-1">Preparing your clip...</h3>
+                    <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
+                      {clipStatus === 'downloading'
+                        ? 'Downloading source from YouTube...'
+                        : clipStatus === 'rendering'
+                        ? 'Cutting clip and transcoding to H.264...'
+                        : 'Queued for processing. Ready shortly...'}
+                    </p>
+                    <div className="w-40 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="bg-brand-500 h-full transition-all duration-300"
+                        style={{ width: `${Math.max(20, clipStatusProgress)}%` }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-slate-500 mt-2 capitalize font-mono">
+                      Status: {clipStatus}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
             {/* Background Layer: Blur / Solid / Image */}
             {editJson.framing.mode === 'blur_fit' && !isShowingOutro && (
               <div className="absolute inset-0 z-0 overflow-hidden">
                 {editJson.background.type === 'blur' && (
                   <video
+                    key={`bg-${clipId}`}
                     ref={bgVideoRef}
                     src={videoUrl}
                     muted
@@ -1563,6 +1846,7 @@ export default function Editor() {
                 {editJson.framing.mode === 'crop' && (
                   <div className="relative w-full h-full overflow-hidden">
                     <video
+                      key={`fg-crop-${clipId}`}
                       ref={videoRef}
                       src={videoUrl}
                       preload="auto"
@@ -1584,6 +1868,7 @@ export default function Editor() {
 
                 {editJson.framing.mode === 'blur_fit' && (
                   <video
+                    key={`fg-blur-${clipId}`}
                     ref={videoRef}
                     src={videoUrl}
                     preload="auto"
@@ -1599,6 +1884,7 @@ export default function Editor() {
                   <div className="w-full h-full flex flex-col">
                     <div className="relative w-full h-1/2 overflow-hidden border-b border-brand-500/30">
                       <video
+                        key={`fg-split-top-${clipId}`}
                         ref={videoRef}
                         src={videoUrl}
                         preload="auto"
@@ -1617,6 +1903,7 @@ export default function Editor() {
                     </div>
                     <div className="relative w-full h-1/2 overflow-hidden">
                       <video
+                        key={`fg-split-bot-${clipId}`}
                         src={videoUrl}
                         preload="auto"
                         playsInline
@@ -2135,32 +2422,73 @@ export default function Editor() {
               <div className="space-y-3 p-3.5 rounded-xl bg-slate-900 border border-surface-border">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-200 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                    <FileVideo size={13} className="text-brand-400" /> Source Video File
+                    <FileVideo size={13} className="text-brand-400" /> Source Media File
                   </span>
-                  <input
-                    type="file"
-                    ref={customVideoInputRef}
-                    accept="video/mp4,video/quicktime,video/webm"
-                    onChange={handleCustomVideoUpload}
-                    className="hidden"
-                  />
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    onClick={() => customVideoInputRef.current?.click()}
-                    className="gap-1 text-[10px]"
-                  >
-                    <Upload size={10} /> Upload MP4
-                  </Button>
+                  <Badge variant={clipStatus === 'ready' ? 'brand' : 'default'} className="text-[9px] uppercase font-mono">
+                    {clipStatus}
+                  </Badge>
                 </div>
 
-                <div className="text-[11px] text-slate-300 truncate bg-slate-950 p-2 rounded-lg border border-surface-border font-mono flex items-center justify-between">
+                {/* Drag-and-drop replacement zone */}
+                <input
+                  type="file"
+                  ref={sourceUploadInputRef}
+                  accept=".mp4,.mov,.webm,video/mp4,video/quicktime,video/webm"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleSourceFileUpload(file)
+                  }}
+                  className="hidden"
+                />
+
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    setIsDraggingFile(true)
+                  }}
+                  onDragLeave={() => setIsDraggingFile(false)}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setIsDraggingFile(false)
+                    const file = e.dataTransfer.files?.[0]
+                    if (file) handleSourceFileUpload(file)
+                  }}
+                  onClick={() => sourceUploadInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition ${
+                    isDraggingFile
+                      ? 'border-brand-500 bg-brand-500/10'
+                      : 'border-slate-700 hover:border-slate-600 bg-slate-950/60'
+                  }`}
+                >
+                  {isUploadingSource ? (
+                    <div className="py-2 flex flex-col items-center">
+                      <Loader2 size={20} className="animate-spin text-brand-400 mb-2" />
+                      <span className="text-[11px] font-semibold text-white">Transcoding & Re-encoding...</span>
+                      <div className="w-36 bg-slate-800 rounded-full h-1 mt-2 overflow-hidden">
+                        <div
+                          className="bg-brand-500 h-full transition-all duration-200"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="mx-auto mb-1.5 text-slate-400" size={18} />
+                      <p className="text-[11px] font-semibold text-slate-200">
+                        Drag & drop MP4/MOV/WebM here, or <span className="text-brand-400 underline">browse</span>
+                      </p>
+                      <p className="text-[9px] text-slate-500 mt-1">Re-encodes to H.264/AAC faststart (max 500 MB)</p>
+                    </>
+                  )}
+                </div>
+
+                <div className="text-[10px] text-slate-400 truncate bg-slate-950 p-2 rounded-lg border border-surface-border font-mono flex items-center justify-between">
                   <span className="truncate">
-                    {videoUrl.startsWith('blob:') ? '📁 Uploaded Custom Video' : videoUrl.split('/').pop() || videoUrl}
+                    ID: {clipId}
                   </span>
-                  <Badge variant="brand" className="text-[9px] shrink-0">
-                    Active
-                  </Badge>
+                  <span className="text-[9px] text-slate-500 shrink-0">
+                    {duration.toFixed(1)}s
+                  </span>
                 </div>
 
                 {/* Paste URL */}
@@ -2171,7 +2499,7 @@ export default function Editor() {
                       type="text"
                       value={customUrlInput}
                       onChange={(e) => setCustomUrlInput(e.target.value)}
-                      placeholder="Paste MP4 URL or YouTube Link..."
+                      placeholder="Paste MP4 direct URL..."
                       className="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-surface-border text-white text-[11px] placeholder:text-slate-500 focus:outline-none focus:border-brand-500"
                     />
                     <Button size="xs" onClick={handleCustomUrlApply} disabled={!customUrlInput.trim()}>
@@ -2554,6 +2882,18 @@ export default function Editor() {
           />
         </div>
       </footer>
+
+      <YouTubePublishModal
+        open={isYouTubePublishOpen}
+        onClose={() => setIsYouTubePublishOpen(false)}
+        clip={{
+          id: clipId,
+          title: clipTitle || 'Viral Reel #Shorts',
+          description: editJson.captions?.words?.map((w) => w.text).join(' ') || 'Created with ClipForge AI',
+          duration: duration || 30.0,
+          video_url: exportDownloadUrl || undefined,
+        }}
+      />
     </div>
   )
 }
