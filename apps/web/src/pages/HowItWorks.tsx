@@ -112,9 +112,9 @@ export default function HowItWorks() {
           <p className="text-sm text-slate-400 max-w-lg mx-auto mb-6">
             Upload your first video and let the pipeline turn it into social clips in minutes.
           </p>
-          <Link to="/signup">
+          <Link to="/dashboard">
             <Button size="lg" className="px-8 py-3.5 font-bold shadow-brand">
-              Get Started for Free →
+              Launch Studio for Free →
             </Button>
           </Link>
         </div>

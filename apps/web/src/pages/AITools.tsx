@@ -152,7 +152,7 @@ export default function AITools() {
                   <p className="text-xs text-slate-400 leading-relaxed">{tool.description}</p>
                 </div>
                 <div className="mt-6 pt-4 border-t border-surface-border">
-                  <Link to="/signup">
+                  <Link to="/dashboard">
                     <Button variant="outline" size="sm" className="w-full text-xs gap-1.5">
                       Launch Tool <ArrowRight size={12} />
                     </Button>
@@ -164,7 +164,7 @@ export default function AITools() {
         </div>
 
         <div className="mt-20 text-center">
-          <Link to="/signup">
+          <Link to="/dashboard">
             <Button size="lg" className="px-8 py-4 font-bold shadow-brand">
               Access All 14 Tools Free →
             </Button>

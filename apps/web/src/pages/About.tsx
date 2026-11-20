@@ -80,9 +80,9 @@ export default function About() {
 
         {/* CTA */}
         <div className="text-center">
-          <Link to="/signup">
+          <Link to="/dashboard">
             <Button size="lg" className="px-8 py-4 font-bold shadow-brand">
-              Join the Movement — Start Free →
+              Launch Studio — Free Access →
             </Button>
           </Link>
         </div>

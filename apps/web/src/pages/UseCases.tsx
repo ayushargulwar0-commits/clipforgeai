@@ -112,7 +112,7 @@ export default function UseCases() {
 
                 <div className="mt-6 pt-4 border-t border-surface-border flex items-center justify-between">
                   <span className="text-xs font-semibold text-brand-300">{uc.metric}</span>
-                  <Link to="/signup" className="text-xs text-slate-400 hover:text-white flex items-center gap-1">
+                  <Link to="/dashboard" className="text-xs text-slate-400 hover:text-white flex items-center gap-1">
                     Try now <ArrowRight size={12} />
                   </Link>
                 </div>
@@ -122,7 +122,7 @@ export default function UseCases() {
         </div>
 
         <div className="mt-20 text-center">
-          <Link to="/signup">
+          <Link to="/dashboard">
             <Button size="lg" className="px-8 py-4 font-bold shadow-brand">
               Repurpose Your Content Today →
             </Button>

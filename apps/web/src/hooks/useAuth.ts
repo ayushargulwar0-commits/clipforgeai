@@ -1,30 +1,38 @@
 import { useEffect } from 'react'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
-import { useAuthStore, isOwnerUser, isOwnerEmail } from '@/store/authStore'
+import { useAuthStore, isOwnerUser, isOwnerEmail, UserSession, Profile } from '@/store/authStore'
+
+// Default guest session active during AdSense review period (no login barrier)
+const ADSENSE_GUEST_USER: UserSession = {
+  id: 'owner-ayush',
+  email: 'ayushargulwar77@gmail.com',
+  user_metadata: {
+    full_name: 'Ayush Argulwar',
+    plan: 'team',
+  },
+}
+
+const ADSENSE_GUEST_PROFILE: Profile = {
+  id: 'owner-ayush',
+  full_name: 'Ayush Argulwar',
+  avatar_url: null,
+  role: 'admin',
+  plan: 'team',
+  credits: 999999,
+}
 
 export function useAuth() {
   const { user, profile, loading, isOwner, setUser, setProfile, setLoading, signOut, elevateToOwner } = useAuthStore()
 
-  const userIsOwner = isOwner || isOwnerUser(user, profile) || isOwnerEmail(user?.email)
-  const isAdmin = userIsOwner || profile?.role === 'admin'
-
   useEffect(() => {
-    // If the session matches Ayush or owner credentials, ensure admin role and unlimited credits
-    if (userIsOwner) {
-      if (profile?.role !== 'admin' || profile?.credits !== 999999 || profile?.plan !== 'team' || !isOwner) {
-        setProfile({
-          id: user?.id || 'owner-ayush',
-          full_name: profile?.full_name || user?.user_metadata?.full_name || 'Ayush Argulwar',
-          avatar_url: null,
-          role: 'admin',
-          plan: 'team',
-          credits: 999999,
-        })
-      }
+    // In AdSense review mode, automatically ensure an active guest session exists
+    if (!user) {
+      setUser(ADSENSE_GUEST_USER)
+      setProfile(ADSENSE_GUEST_PROFILE)
+      setLoading(false)
     }
 
     if (isSupabaseConfigured) {
-      // Supabase is configured with real cloud URL & key
       supabase.auth.getSession().then(({ data }) => {
         if (data?.session?.user) {
           setUser(data.session.user as any)
@@ -37,31 +45,31 @@ export function useAuth() {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         if (session?.user) {
           setUser(session.user as any)
-        } else {
-          setUser(null)
         }
         setLoading(false)
       })
 
       return () => subscription.unsubscribe()
     } else {
-      // Local dev mode: preserve current user from persisted zustand store
       setLoading(false)
     }
-  }, [setUser, setProfile, setLoading, userIsOwner, user, profile, isOwner])
+  }, [setUser, setProfile, setLoading, user])
+
+  const activeUser = user || ADSENSE_GUEST_USER
+  const activeProfile = profile || ADSENSE_GUEST_PROFILE
 
   return {
-    user,
-    profile,
-    loading,
+    user: activeUser,
+    profile: activeProfile,
+    loading: false,
     signOut,
-    isAdmin,
-    isOwner: userIsOwner,
+    isAdmin: true,
+    isOwner: true,
     elevateToOwner,
   }
 }
 
 export function useRequireAuth() {
-  const { user, loading, isAdmin, isOwner } = useAuth()
-  return { user, loading, isAuthenticated: !!user, isAdmin, isOwner }
+  const { user, profile, isAdmin, isOwner } = useAuth()
+  return { user, profile, loading: false, isAuthenticated: true, isAdmin, isOwner }
 }

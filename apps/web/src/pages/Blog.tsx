@@ -131,9 +131,9 @@ export default function Blog() {
               <p className="text-slate-400 text-sm mb-6">
                 ClipForge AI automatically generates clips, kinetic captions, and reframing in minutes.
               </p>
-              <Link to="/signup">
+              <Link to="/dashboard">
                 <Button size="lg" className="font-semibold shadow-brand">
-                  Try ClipForge AI Free →
+                  Launch ClipForge Studio Free →
                 </Button>
               </Link>
             </div>

@@ -141,11 +141,7 @@ export default function Home() {
     e.preventDefault()
     if (!quickUrl.trim()) return
     sessionStorage.setItem('cf_pending_url', quickUrl.trim())
-    if (user) {
-      navigate(`/dashboard/clips?import=${encodeURIComponent(quickUrl.trim())}`)
-    } else {
-      navigate(`/signup?import=${encodeURIComponent(quickUrl.trim())}`)
-    }
+    navigate(`/dashboard/clips?import=${encodeURIComponent(quickUrl.trim())}`)
   }
 
   return (
@@ -199,9 +195,9 @@ export default function Home() {
               transition={{ delay: 0.3 }}
               className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12"
             >
-              <Link to="/signup">
+              <Link to="/dashboard">
                 <Button size="lg" className="w-full sm:w-auto text-base px-8 py-4 gap-2 font-semibold shadow-brand">
-                  Start Free — No Card Needed
+                  Launch Studio — Free Access
                   <ArrowRight size={18} />
                 </Button>
               </Link>
@@ -374,8 +370,8 @@ export default function Home() {
                 </ul>
               </div>
               <div className="mt-8">
-                <Link to="/signup" className="w-full block">
-                  <Button variant="outline" className="w-full">Get Started Free</Button>
+                <Link to="/dashboard" className="w-full block">
+                  <Button variant="outline" className="w-full">Open Free Studio</Button>
                 </Link>
               </div>
             </Card>
@@ -401,8 +397,8 @@ export default function Home() {
                 </ul>
               </div>
               <div className="mt-8">
-                <Link to="/signup" className="w-full block">
-                  <Button className="w-full">Upgrade to Creator</Button>
+                <Link to="/dashboard" className="w-full block">
+                  <Button className="w-full">Explore Creator Studio</Button>
                 </Link>
               </div>
             </Card>
@@ -423,8 +419,8 @@ export default function Home() {
                 </ul>
               </div>
               <div className="mt-8">
-                <Link to="/signup" className="w-full block">
-                  <Button variant="outline" className="w-full">Start Pro Trial</Button>
+                <Link to="/dashboard" className="w-full block">
+                  <Button variant="outline" className="w-full">Start Pro Studio</Button>
                 </Link>
               </div>
             </Card>
@@ -491,9 +487,9 @@ export default function Home() {
               Join thousands of creators turning long footage into automated Reels, TikToks, and Shorts.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10">
-              <Link to="/signup">
+              <Link to="/dashboard">
                 <Button size="lg" className="px-8 py-4 font-bold text-base shadow-brand">
-                  Create Your Free Account →
+                  Launch Studio Now →
                 </Button>
               </Link>
               <Link to="/pricing">

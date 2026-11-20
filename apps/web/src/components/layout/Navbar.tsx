@@ -63,22 +63,9 @@ export function Navbar() {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-3">
-            {!loading && (
-              user ? (
-                <Button size="sm" onClick={() => navigate('/dashboard')}>
-                  Dashboard
-                </Button>
-              ) : (
-                <>
-                  <Link to="/login">
-                    <Button variant="ghost" size="sm">Log in</Button>
-                  </Link>
-                  <Link to="/signup">
-                    <Button size="sm">Start for free</Button>
-                  </Link>
-                </>
-              )
-            )}
+            <Button size="sm" onClick={() => navigate('/dashboard')} className="font-semibold shadow-brand">
+              Launch Studio
+            </Button>
           </div>
 
           {/* Mobile menu button */}
@@ -117,18 +104,9 @@ export function Navbar() {
                 </Link>
               ))}
               <div className="border-t border-surface-border mt-2 pt-3 flex flex-col gap-2">
-                {user ? (
-                  <Button onClick={() => navigate('/dashboard')} className="w-full">Dashboard</Button>
-                ) : (
-                  <>
-                    <Link to="/login" className="w-full">
-                      <Button variant="outline" className="w-full">Log in</Button>
-                    </Link>
-                    <Link to="/signup" className="w-full">
-                      <Button className="w-full">Start for free</Button>
-                    </Link>
-                  </>
-                )}
+                <Button onClick={() => navigate('/dashboard')} className="w-full font-semibold shadow-brand">
+                  Launch Studio
+                </Button>
               </div>
             </div>
           </motion.div>

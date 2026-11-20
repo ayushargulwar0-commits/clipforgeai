@@ -1,235 +1,51 @@
-import { useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PublicLayout } from '@/components/layout/PublicLayout'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
-import { useToast } from '@/components/ui/Toast'
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
-import { useAuthStore, isOwnerEmail, isOwnerName } from '@/store/authStore'
-import { Lock, Mail, User, ArrowRight, CheckCircle2, Crown } from 'lucide-react'
+import { Sparkles, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { BrandLogo } from '@/components/ui/BrandLogo'
 
 export default function Signup() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const plan = searchParams.get('plan') || 'free'
-  const { error, success } = useToast()
-  const { setUser, setProfile } = useAuthStore()
 
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [agreed, setAgreed] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [registered, setRegistered] = useState(false)
-  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({})
-
-  const validate = () => {
-    const errs: typeof formErrors = {}
-    if (!fullName.trim()) errs.fullName = 'Full name is required'
-    if (!email) errs.email = 'Email is required'
-    else if (!/\S+@\S+\.\S+/.test(email)) errs.email = 'Invalid email address'
-    if (!password) errs.password = 'Password is required'
-    else if (password.length < 8) errs.password = 'Password must be at least 8 characters'
-    if (password !== confirmPassword) errs.confirmPassword = 'Passwords do not match'
-    if (!agreed) errs.agreed = 'You must agree to the Terms of Service'
-    setFormErrors(errs)
-    return Object.keys(errs).length === 0
-  }
-
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!validate()) return
-
-    setLoading(true)
-    const isOwner = isOwnerEmail(email) || isOwnerName(fullName)
-
-    // Fallback helper for local session
-    const setLocalSession = () => {
-      const mockUser = {
-        id: isOwner ? 'owner-ayush' : ('usr-' + Date.now()),
-        email,
-        user_metadata: { full_name: isOwner ? 'Ayush Argulwar' : fullName, plan: isOwner ? 'team' : plan },
-      }
-      setUser(mockUser)
-      setProfile({
-        id: mockUser.id,
-        full_name: isOwner ? 'Ayush Argulwar' : fullName,
-        avatar_url: null,
-        role: isOwner ? 'admin' : 'user',
-        plan: isOwner ? 'team' : ((plan as any) || 'free'),
-        credits: isOwner ? 999999 : 100,
-      })
-      if (isOwner) {
-        success('Welcome Owner!', 'Account registered with Full Platform Owner & Admin privileges.')
-      } else {
-        success('Welcome to ClipForge AI!', 'Account created (Local Development Mode).')
-      }
-      navigate('/dashboard')
-    }
-
-
-    if (!isSupabaseConfigured) {
-      setLocalSession()
-      setLoading(false)
-      return
-    }
-
-    try {
-      const { data, error: authErr } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-            plan: plan,
-          },
-        },
-      })
-
-      if (authErr) {
-        // If Supabase returns an error, fallback to local dev session
-        console.warn('Supabase auth error, falling back to local session:', authErr.message)
-        setLocalSession()
-      } else if (data.user) {
-        if (data.session) {
-          setUser(data.user as any)
-          setProfile({
-            id: data.user.id,
-            full_name: fullName,
-            avatar_url: null,
-            role: 'user',
-            plan: (plan as any) || 'free',
-            credits: 100,
-          })
-          success('Account created!', 'Welcome to ClipForge AI.')
-          navigate('/dashboard')
-        } else {
-          setRegistered(true)
-        }
-      }
-    } catch (err: any) {
-      // Network failure / Failed to fetch fallback
-      console.warn('Supabase fetch failed, creating local session:', err.message)
-      setLocalSession()
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      navigate('/dashboard', { replace: true })
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [navigate])
 
   return (
     <PublicLayout hideFooter>
-      <div className="min-h-[calc(100vh-4rem)] pt-8 pb-16 px-4 flex flex-col items-center justify-center">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-6">
-            <div className="flex justify-center mb-3">
-              <BrandLogo size="lg" />
+      <div className="py-20 max-w-md mx-auto px-4">
+        <Card className="p-8 text-center space-y-6 border-surface-border bg-surface-card">
+          <div className="flex justify-center">
+            <BrandLogo size="lg" />
+          </div>
+
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+              <CheckCircle2 size={14} /> Open Access Mode Active
             </div>
-            <h1 className="text-2xl font-bold text-white">Create your free account</h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Start turning long videos into viral clips today. No credit card required.
+            <h1 className="text-2xl font-bold text-white">Instant Full Access</h1>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Registration is temporarily bypassed. You can explore all features, templates, and video rendering tools freely without an account.
             </p>
           </div>
 
-          <Card className="p-8">
-            {registered ? (
-              <div className="text-center py-6 space-y-4">
-                <div className="w-14 h-14 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
-                  <CheckCircle2 size={28} />
-                </div>
-                <h3 className="text-lg font-bold text-white">Check Your Email</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  We sent a verification link to <strong className="text-slate-200">{email}</strong>. Please click the link to activate your account and jump into the dashboard.
-                </p>
-                <div className="pt-2">
-                  <Link to="/login">
-                    <Button variant="outline" size="sm" className="w-full">
-                      Proceed to Sign In
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleSignup} className="space-y-4">
-                <Input
-                  label="Full Name"
-                  placeholder="Alex Rivera"
-                  value={fullName}
-                  error={formErrors.fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  icon={<User size={16} />}
-                />
+          <Button
+            size="lg"
+            className="w-full gap-2 font-bold shadow-brand"
+            onClick={() => navigate('/dashboard')}
+          >
+            Enter Studio Directly <ArrowRight size={18} />
+          </Button>
 
-                <Input
-                  label="Email Address"
-                  type="email"
-                  placeholder="name@example.com"
-                  value={email}
-                  error={formErrors.email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  icon={<Mail size={16} />}
-                />
-
-                <Input
-                  label="Password"
-                  type="password"
-                  placeholder="Min. 8 characters"
-                  value={password}
-                  error={formErrors.password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  icon={<Lock size={16} />}
-                />
-
-                <Input
-                  label="Confirm Password"
-                  type="password"
-                  placeholder="Re-type password"
-                  value={confirmPassword}
-                  error={formErrors.confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  icon={<Lock size={16} />}
-                />
-
-                <div className="pt-1">
-                  <label className="flex items-start gap-2.5 text-xs text-slate-400 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={agreed}
-                      onChange={(e) => setAgreed(e.target.checked)}
-                      className="mt-0.5 rounded border-surface-border bg-surface text-brand-600 focus:ring-brand-500"
-                    />
-                    <span>
-                      I agree to the{' '}
-                      <a href="#" className="text-brand-400 underline hover:text-brand-300">
-                        Terms of Service
-                      </a>{' '}
-                      and{' '}
-                      <a href="#" className="text-brand-400 underline hover:text-brand-300">
-                        Privacy Policy
-                      </a>
-                    </span>
-                  </label>
-                  {formErrors.agreed && (
-                    <p className="text-[11px] text-red-400 mt-1">{formErrors.agreed}</p>
-                  )}
-                </div>
-
-                <Button type="submit" loading={loading} className="w-full font-semibold">
-                  Get Started for Free <ArrowRight size={16} className="ml-1" />
-                </Button>
-              </form>
-            )}
-          </Card>
-
-          <p className="text-center text-xs text-slate-400 mt-6">
-            Already have an account?{' '}
-            <Link to="/login" className="text-brand-400 font-semibold hover:text-brand-300">
-              Sign in
-            </Link>
+          <p className="text-[11px] text-slate-500">
+            Redirecting automatically…
           </p>
-        </div>
+        </Card>
       </div>
     </PublicLayout>
   )

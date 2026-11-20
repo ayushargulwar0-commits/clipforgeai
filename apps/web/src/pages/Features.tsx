@@ -177,7 +177,7 @@ export default function Features() {
 
         {/* CTA */}
         <div className="mt-20 text-center">
-          <Link to="/signup">
+          <Link to="/dashboard">
             <Button size="lg" className="px-8 py-4 font-bold text-base shadow-brand">
               Try All Features Free →
             </Button>

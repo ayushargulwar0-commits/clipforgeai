@@ -15,7 +15,7 @@ const TIERS = [
     annualPrice: 0,
     popular: false,
     cta: 'Start Free',
-    href: '/signup',
+    href: '/dashboard',
     features: [
       { name: 'Video Uploads / month', val: '5 videos' },
       { name: 'Transcription Minutes', val: '30 mins' },
@@ -39,7 +39,7 @@ const TIERS = [
     annualPrice: 799,
     popular: true,
     cta: 'Start Creator',
-    href: '/signup?plan=creator',
+    href: '/dashboard',
     features: [
       { name: 'Video Uploads / month', val: '50 videos' },
       { name: 'Transcription Minutes', val: '300 mins' },
@@ -63,7 +63,7 @@ const TIERS = [
     annualPrice: 1999,
     popular: false,
     cta: 'Start Pro',
-    href: '/signup?plan=pro',
+    href: '/dashboard',
     features: [
       { name: 'Video Uploads / month', val: '200 videos' },
       { name: 'Transcription Minutes', val: '1,000 mins' },
