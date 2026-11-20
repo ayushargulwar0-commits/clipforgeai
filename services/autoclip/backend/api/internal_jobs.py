@@ -241,9 +241,9 @@ def _run_autoclip_job(
             "quiet": True,
             "no_warnings": True,
             "overwrites": True,
-            "writesubtitles": True,
-            "writeautomaticsub": True,
-            "subtitleslangs": ["en", "en-US", "hi", "zh-Hans", "zh"],
+            "writesubtitles": False,
+            "writeautomaticsub": False,
+            "ignoreerrors": True,
         }
 
         video_title = "Highlight Clip"

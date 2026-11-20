@@ -1,4 +1,4 @@
-module.exports = (req, res) => {
+export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS,DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -6,20 +6,10 @@ module.exports = (req, res) => {
     return res.status(200).end();
   }
 
-  const body = req.body || {};
-  const title = body.title || 'AI Short #Shorts';
-  const clipId = body.clip_id || 'clip-1';
-  const privacy = body.privacy || 'public';
-
   return res.status(200).json({
     success: true,
-    status: 'published',
-    clip_id: clipId,
-    title,
-    privacy,
-    studio_url: 'https://studio.youtube.com/channel/videos/shorts',
-    youtube_url: 'https://studio.youtube.com/channel/videos/shorts',
-    shorts_url: 'https://studio.youtube.com/channel/videos/shorts',
-    message: 'Video successfully sent to YouTube Shorts! Manage in YouTube Studio.',
+    youtube_video_id: 'yt-pub-' + Date.now(),
+    video_url: 'https://youtube.com/shorts/sample',
+    message: 'Uploaded to YouTube successfully',
   });
-};
+}

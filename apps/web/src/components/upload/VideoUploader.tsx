@@ -100,7 +100,7 @@ export function VideoUploader({ onUploadComplete, projectId }: VideoUploaderProp
       setUrlInput('')
     } catch (err: any) {
       setProgress(0)
-      const msg = err.response?.data?.detail || err.message || 'URL import failed'
+      const msg = err.response?.data?.detail || err.response?.data?.message || err.response?.data?.error || err.message || 'URL import failed'
       error('Import Failed', msg)
     } finally {
       setUploading(false)
